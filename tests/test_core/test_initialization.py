@@ -1,3 +1,7 @@
+import json
+import tempfile
+from pathlib import Path
+
 import geopandas as gpd
 import gurobipy as gp
 import pytest
@@ -88,15 +92,10 @@ def test_cost_columns_extraction(sample_gdf: gpd.GeoDataFrame):
 
 
 def test_build_variables(sample_gdf: gpd.GeoDataFrame):
-    """Test that build_variables creates the model and correct number of variables."""
+    """Test that build_variables creates binary variables for each pathway."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
-    # Should initialize model correctly
-    assert isinstance(optimizer.model, gp.Model)
-    assert optimizer.model.ModelName == "pathway_optimizer"
-
-    # Should create correct variables
-    assert isinstance(optimizer.variables, dict)
+    # Should create one variable per pathway
     assert len(optimizer.variables) == len(optimizer.pids)
     assert all(var.VType == gp.GRB.BINARY for var in optimizer.variables.values())

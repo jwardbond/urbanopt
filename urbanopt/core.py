@@ -1,8 +1,10 @@
 import geopandas as gpd
 import gurobipy as gp
+import json
+from pathlib import Path
 from shapely.geometry import Polygon, MultiPolygon, Point
 from pyproj import Transformer
-from typing import Callable
+from typing import Callable, Dict, Any
 
 
 class PathwayOptimizer:
@@ -484,6 +486,153 @@ class PathwayOptimizer:
 
         # Update model to reflect changes
         self.model.update()
+
+    def save(self, path: str | Path) -> None:
+        """Save the optimizer state to disk.
+
+        This method saves:
+        1. The GeoDataFrame to a GeoParquet file
+        2. Model configuration and constraints to a JSON file
+
+        Args:
+            path: Base path for saving files (without extension).
+                 Will create {path}.geoparquet and {path}.json.
+
+        Raises:
+            RuntimeError: If model has not been built yet.
+            ValueError: If path is invalid.
+        """
+        if not hasattr(self, "model") or not hasattr(self, "variables"):
+            msg = "Model has not been built yet. Call build_variables() first."
+            raise RuntimeError(msg)
+
+        path = Path(path)
+        if str(path) == "":
+            msg = "Path cannot be empty"
+            raise ValueError(msg)
+
+        # Save GeoDataFrame to GeoParquet
+        parquet_path = path.with_suffix(".geoparquet")
+        self.data.to_parquet(parquet_path)
+
+        # Extract model configuration
+        config = {
+            "pids": self.pids,
+            "cost_columns": self.cost_columns,
+            "constraints": {},
+            "objective": None,
+        }
+
+        # Save objective if set
+        if self.model.getAttr("ModelSense") == gp.GRB.MINIMIZE:
+            obj = self.model.getObjective()
+            weights = {}
+            for i in range(obj.size()):
+                var = obj.getVar(i)
+                coeff = obj.getCoeff(i)
+                pid = next(
+                    pid for pid, v in self.variables.items() if v.index == var.index
+                )
+                for col in self.cost_columns:
+                    if (
+                        abs(coeff - self.data.loc[self.data["pid"] == pid, col].iloc[0])
+                        < 1e-6
+                    ):
+                        weights[col] = 1.0
+                        break
+            config["objective"] = weights
+
+        # Save constraints by tag
+        for tag, constrs in self.constraints.items():
+            config["constraints"][tag] = []
+            for constr in constrs:
+                expr = self.model.getRow(constr)
+                pids = []
+                coeffs = []
+                for i in range(expr.size()):
+                    var = expr.getVar(i)
+                    pid = next(
+                        pid for pid, v in self.variables.items() if v.index == var.index
+                    )
+                    pids.append(pid)
+                    coeffs.append(expr.getCoeff(i))
+
+                config["constraints"][tag].append(
+                    {
+                        "pids": pids,
+                        "coeffs": coeffs,
+                        "sense": "<="
+                        if constr.Sense == "<"
+                        else ">="
+                        if constr.Sense == ">"
+                        else "==",
+                        "rhs": constr.RHS,
+                    }
+                )
+
+        # Save configuration to JSON
+        json_path = path.with_suffix(".json")
+        json_path.write_text(json.dumps(config, indent=2))
+
+    @classmethod
+    def load(cls, path: str | Path) -> "PathwayOptimizer":
+        """Load an optimizer from saved files.
+
+        Args:
+            path: Base path for loading files (without extension).
+                 Will look for {path}.geoparquet and {path}.json.
+
+        Returns:
+            A new PathwayOptimizer instance with restored state.
+
+        Raises:
+            FileNotFoundError: If either file is missing.
+            ValueError: If saved state is invalid.
+        """
+        path = Path(path)
+
+        # Load GeoDataFrame
+        parquet_path = path.with_suffix(".geoparquet")
+        if not parquet_path.exists():
+            msg = f"GeoParquet file not found: {parquet_path}"
+            raise FileNotFoundError(msg)
+
+        data = gpd.read_parquet(parquet_path)
+        optimizer = cls(data)
+        optimizer.build_variables()
+
+        # Load configuration
+        json_path = path.with_suffix(".json")
+        if not json_path.exists():
+            msg = f"JSON configuration file not found: {json_path}"
+            raise FileNotFoundError(msg)
+
+        config = json.loads(json_path.read_text())
+
+        # Verify configuration matches data
+        if config["pids"] != optimizer.pids:
+            msg = "Saved configuration does not match loaded data"
+            raise ValueError(msg)
+
+        # Restore objective if present
+        if config["objective"]:
+            optimizer.set_objective(config["objective"])
+
+        # Restore constraints
+        for tag, constrs in config["constraints"].items():
+            for constr in constrs:
+                optimizer._add_constraint(
+                    pids=constr["pids"],
+                    coeff_func=lambda pid,
+                    coeffs=dict(zip(constr["pids"], constr["coeffs"])): coeffs[pid],
+                    sense={"<=": "le", ">=": "ge", "==": "eq"}[
+                        constr["sense"]
+                    ],  # Map standard format to Gurobi format
+                    rhs=constr["rhs"],
+                    tag=tag,
+                )
+
+        return optimizer
 
 
 def _reproject_point(point: Point, from_crs: str, to_crs: str) -> Point:
