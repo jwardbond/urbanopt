@@ -1,9 +1,10 @@
 import geopandas as gpd
 import gurobipy as gp
 import pytest
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPolygon, Polygon, Point
 
 from urbanopt import PathwayOptimizer
+from urbanopt.core import _reproject_point
 
 
 def test_add_max_opportunity_global(sample_gdf: gpd.GeoDataFrame):
@@ -350,3 +351,63 @@ def test_mixed_constraint_tags(sample_gdf: gpd.GeoDataFrame):
     assert optimizer.constraints["mixed"] == [c1, c2]
     assert optimizer.constraints["other"] == [c4]
     assert optimizer.constraints["untagged"] == [c3]
+
+
+def test_max_opportunity_near_point(sample_gdf: gpd.GeoDataFrame):
+    """Test that max opportunity near point constraint correctly filters by distance."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    limit = 4.0
+    point = Point(0.5, 0.5)  # Center point
+    distance = 0.7  # Should catch points within sqrt(0.5) of center
+    proj_crs = "EPSG:3347"  # Canada Lambert Conformal Conic
+
+    constraint = optimizer.add_max_opportunity_near_point(
+        limit,
+        point,
+        distance,
+        proj_crs=proj_crs,
+    )
+    optimizer.model.update()
+
+    # Should create one constraint in untagged group
+    assert "untagged" in optimizer.constraints
+    assert len(optimizer.constraints["untagged"]) == 1
+    assert isinstance(constraint, gp.Constr)
+    assert limit == constraint.RHS
+
+    # Should include only pathways with centroids within distance
+    expr = optimizer.model.getRow(constraint)
+    used_indices = {expr.getVar(i).index for i in range(expr.size())}
+
+    # Project data and point for distance check
+    projected_data = sample_gdf.to_crs(proj_crs)
+    projected_point = _reproject_point(point, sample_gdf.crs, proj_crs)
+    mask = projected_data.geometry.centroid.distance(projected_point) <= distance
+    expected_pids = projected_data[mask]["pid"].tolist()
+    expected_indices = {optimizer.variables[pid].index for pid in expected_pids}
+
+    assert used_indices == expected_indices
+
+
+def test_max_opportunity_near_point_crs_validation(sample_gdf: gpd.GeoDataFrame):
+    """Test that max opportunity near point constraint validates CRS."""
+    # Set geographic CRS
+    sample_gdf = sample_gdf.set_crs("EPSG:4326")
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    point = Point(0.5, 0.5)
+    distance = 0.7
+
+    # Should raise error if no CRS provided with geographic data
+    with pytest.raises(ValueError, match="Must provide projected CRS"):
+        optimizer.add_max_opportunity_near_point(4.0, point, distance)
+
+    # Should work with projected CRS provided
+    constraint = optimizer.add_max_opportunity_near_point(
+        4.0,
+        point,
+        distance,
+        proj_crs="EPSG:3347",
+    )
+    assert isinstance(constraint, gp.Constr)

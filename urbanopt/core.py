@@ -1,6 +1,7 @@
 import geopandas as gpd
 import gurobipy as gp
-from shapely.geometry import Polygon, MultiPolygon
+from shapely.geometry import Polygon, MultiPolygon, Point
+from pyproj import Transformer
 from typing import Callable
 
 
@@ -336,3 +337,58 @@ class PathwayOptimizer:
             rhs=max_count,
             tag=tag,
         )
+
+    def add_max_opportunity_near_point(
+        self,
+        limit: float,
+        point: Point,
+        distance: float,
+        proj_crs: str | None = None,
+        tag: str | None = None,
+    ) -> gp.Constr:
+        """Add a constraint limiting total opportunity for pathways near a point.
+
+        Args:
+            limit: Maximum allowed total opportunity across selected pathways.
+            point: Shapely Point to measure distance from.
+            distance: Maximum distance from point to pathway centroid.
+            proj_crs: Optional CRS to project geometries into before distance calculation.
+                 If not provided, uses the current CRS which must be projected.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            The created Gurobi constraint object.
+
+        Raises:
+            ValueError: If no CRS is provided and current CRS is not projected.
+        """
+        # If CRS provided, project data and point
+        if proj_crs is not None:
+            data = self.data.copy().to_crs(proj_crs)
+            point = _reproject_point(point, self.crs, proj_crs)
+        else:
+            if not self.data.crs or self.data.crs.is_geographic:
+                msg = "Must provide projected CRS for distance calculation"
+                raise ValueError(msg)
+            data = self.data
+
+        # Filter pathways by distance from point to centroid
+        mask = data.geometry.centroid.distance(point) <= distance
+        filtered_pids = data[mask]["pid"].tolist()
+
+        def opportunity_coeff(pid: int) -> float:
+            return self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
+
+        return self._add_constraint(
+            pids=filtered_pids,
+            coeff_func=opportunity_coeff,
+            sense="le",
+            rhs=limit,
+            tag=tag,
+        )
+
+
+def _reproject_point(point: Point, from_crs: str, to_crs: str) -> Point:
+    transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
+    x, y = transformer.transform(point.x, point.y)
+    return Point(x, y)
