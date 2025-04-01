@@ -13,6 +13,8 @@ def sample_gdf():
         "desc": ["desc1", "desc2", "desc3"],
         "opportunity": [1.0, 2.0, 3.0],
         "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+        "cost_emb": [10, 20, 30],
+        "cost_transit": [5, 15, 25],
     }
     return gpd.GeoDataFrame(data, crs="EPSG:4326")
 

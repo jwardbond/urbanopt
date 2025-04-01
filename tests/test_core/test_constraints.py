@@ -380,7 +380,6 @@ def test_max_opportunity_near_point(sample_gdf: gpd.GeoDataFrame):
     expr = optimizer.model.getRow(constraint)
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
 
-    # Project data and point for distance check
     projected_data = sample_gdf.to_crs(proj_crs)
     projected_point = _reproject_point(point, sample_gdf.crs, proj_crs)
     mask = projected_data.geometry.centroid.distance(projected_point) <= distance

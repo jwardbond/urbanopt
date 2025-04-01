@@ -387,6 +387,82 @@ class PathwayOptimizer:
             tag=tag,
         )
 
+    def solve(self) -> None:
+        """Solve the optimization model.
+
+        This method optimizes the model with the current objective and constraints.
+        After solving, use get_selected_pids() to get the selected pathways or
+        get_summary() for optimization results.
+
+        Raises:
+            RuntimeError: If the model is infeasible or unbounded.
+        """
+        self.model.optimize()
+        self.model.update()  # Ensure model state is current before status check
+        status = self.model.Status
+
+        if status == gp.GRB.INFEASIBLE:
+            msg = "Model is infeasible"
+            raise RuntimeError(msg)
+        elif status == gp.GRB.UNBOUNDED:
+            msg = "Model is unbounded"
+            raise RuntimeError(msg)
+        elif status != gp.GRB.OPTIMAL:
+            msg = f"Optimization failed with status {status}"
+            raise RuntimeError(msg)
+
+    def get_selected_pids(self) -> list[int]:
+        """Get the list of selected pathway IDs from the solved model.
+
+        Returns:
+            List of pathway IDs that were selected (variable value = 1).
+
+        Raises:
+            RuntimeError: If the model has not been solved yet.
+        """
+        if self.model.SolCount == 0:
+            msg = "Model has not been solved yet"
+            raise RuntimeError(msg)
+
+        self.model.update()
+
+        return [
+            pid
+            for pid, var in self.variables.items()
+            if abs(var.X - 1.0) < 1e-6  # Check if binary variable is 1
+        ]
+
+    def get_summary(self) -> dict:
+        """Get a summary of the optimization results.
+
+        Returns:
+            Dictionary containing:
+                - objective_value: The final objective value
+                - total_opportunity: Sum of opportunity for selected pathways
+                - solve_time: Time taken to solve the model (seconds)
+                - selected_count: Number of selected pathways
+
+        Raises:
+            RuntimeError: If the model has not been solved yet.
+        """
+        if self.model.SolCount == 0:
+            msg = "Model has not been solved yet"
+            raise RuntimeError(msg)
+
+        self.model.update()  # Ensure model state is current before reading values
+
+        selected_pids = self.get_selected_pids()
+        total_opportunity = self.data[self.data["pid"].isin(selected_pids)][
+            "opportunity"
+        ].sum()
+
+        return {
+            "objective_value": self.model.ObjVal,
+            "total_opportunity": total_opportunity,
+            "solve_time": self.model.Runtime,
+            "selected_count": len(selected_pids),
+        }
+
 
 def _reproject_point(point: Point, from_crs: str, to_crs: str) -> Point:
     transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
