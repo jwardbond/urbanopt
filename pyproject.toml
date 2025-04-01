@@ -32,7 +32,8 @@ lint.exclude = [
     "node_modules",
     "site-packages",
     "venv",
-    "archive*"
+    "archive*",
+    ".archive" 
 ]
 
 lint.ignore = [ 

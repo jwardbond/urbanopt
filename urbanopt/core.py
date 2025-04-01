@@ -287,7 +287,6 @@ class PathwayOptimizer:
             geom1 = self.data[self.data["pid"] == pid1]["geometry"].iloc[0]
             for pid2 in pids2:
                 geom2 = self.data[self.data["pid"] == pid2]["geometry"].iloc[0]
-                # If they intersect, add mutual exclusion constraint
                 if geom1.intersects(geom2):
                     constr = self._add_constraint(
                         pids=[pid1, pid2],
@@ -299,3 +298,41 @@ class PathwayOptimizer:
                     constraints.append(constr)
 
         return constraints
+
+    def add_pathway_limit(
+        self,
+        start: str,
+        end: str,
+        max_count: float,
+        boundary: Polygon | MultiPolygon | None = None,
+        tag: str | None = None,
+    ) -> gp.Constr:
+        """Add a constraint limiting the number of selected pathways of a specific type.
+
+        Args:
+            start: Start point/area identifier.
+            end: End point/area identifier.
+            max_count: Maximum number of pathways that can be selected.
+            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
+                     that intersect with this boundary will be included in the constraint.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            The created Gurobi constraint object.
+        """
+        # Filter pathways by start/end
+        mask = (self.data["start"] == start) & (self.data["end"] == end)
+
+        # Apply boundary filter if provided
+        if boundary is not None:
+            mask = mask & self.data.geometry.intersects(boundary)
+
+        filtered_pids = self.data[mask]["pid"].tolist()
+
+        return self._add_constraint(
+            pids=filtered_pids,
+            coeff_func=lambda pid: 1.0,  # noqa: ARG005
+            sense="le",
+            rhs=max_count,
+            tag=tag,
+        )
