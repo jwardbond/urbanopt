@@ -1,7 +1,7 @@
 import geopandas as gpd
 import gurobipy as gp
 import pytest
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon, MultiPolygon
 
 from urbanopt import PathwayOptimizer
 
@@ -24,19 +24,15 @@ def test_optimizer_initialization(sample_gdf: gpd.GeoDataFrame):
     """Test that the optimizer initializes correctly with a GeoDataFrame."""
     optimizer = PathwayOptimizer(sample_gdf)
 
-    # Check that the GeoDataFrame is stored correctly
-    assert optimizer.df is sample_gdf
-
-    # Check that the CRS is stored correctly
+    # Should be initialized with a copy of input data
+    assert optimizer.data is not sample_gdf
+    assert optimizer.data.equals(sample_gdf)
     assert optimizer.crs == "EPSG:4326"
-
-    # Check that pids are stored correctly
     assert optimizer.pids == [1, 2, 3]
 
 
 def test_missing_required_columns():
     """Test that initialization fails when required columns are missing."""
-    # Create a GeoDataFrame missing some required columns
     data = {
         "pid": [1],
         "start": ["A"],
@@ -44,11 +40,10 @@ def test_missing_required_columns():
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
 
-    # Attempt to initialize with missing columns
     with pytest.raises(ValueError) as exc_info:
         PathwayOptimizer(gdf)
 
-    # Check that the error message lists the missing columns
+    # Should raise error with missing columns
     assert "Missing required columns" in str(exc_info.value)
     assert "end" in str(exc_info.value)
     assert "desc" in str(exc_info.value)
@@ -57,17 +52,14 @@ def test_missing_required_columns():
 
 def test_cost_columns_extraction(sample_gdf: gpd.GeoDataFrame):
     """Test that cost_* columns are correctly extracted."""
-    # Add cost columns to the sample data
     sample_gdf["cost_emb"] = [10, 20, 30]
     sample_gdf["cost_transit"] = [5, 15, 25]
-    sample_gdf["not_a_cost"] = [1, 2, 3]  # This should not be included
+    sample_gdf["not_a_cost"] = [1, 2, 3]
 
     optimizer = PathwayOptimizer(sample_gdf)
 
-    # Check that cost columns were correctly identified
+    # Should extract correct cost columns
     assert sorted(optimizer.cost_columns) == ["cost_emb", "cost_transit"]
-
-    # Check that non-cost columns were not included
     assert "not_a_cost" not in optimizer.cost_columns
 
 
@@ -76,16 +68,192 @@ def test_build_variables(sample_gdf: gpd.GeoDataFrame):
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
-    # Check that model was created
+    # Should initialize model correctly
     assert isinstance(optimizer.model, gp.Model)
     assert optimizer.model.ModelName == "pathway_optimizer"
 
-    # Check that variables dictionary was created
+    # Should create correct variables
     assert isinstance(optimizer.variables, dict)
-
-    # Check that we have one variable per pathway
     assert len(optimizer.variables) == len(optimizer.pids)
+    assert all(var.VType == gp.GRB.BINARY for var in optimizer.variables.values())
 
-    # Check that each variable is binary
-    for var in optimizer.variables.values():
-        assert var.VType == gp.GRB.BINARY
+
+def test_set_objective_valid_weights(sample_gdf: gpd.GeoDataFrame):
+    """Test that set_objective correctly sets the objective with valid weights."""
+    sample_gdf["cost_emb"] = [10, 20, 30]
+    sample_gdf["cost_transit"] = [5, 15, 25]
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    weights = {"cost_emb": 1.0, "cost_transit": 0.5}
+
+    optimizer.set_objective(weights)
+
+    # Should set minimization objective
+    assert optimizer.model.ModelSense == gp.GRB.MINIMIZE
+
+
+def test_set_objective_invalid_weights(sample_gdf: gpd.GeoDataFrame):
+    """Test that set_objective raises ValueError for invalid cost columns."""
+    sample_gdf["cost_emb"] = [10, 20, 30]
+    sample_gdf["cost_transit"] = [5, 15, 25]
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    invalid_weights = {"cost_emb": 1.0, "invalid_cost": 0.5}
+
+    with pytest.raises(ValueError) as exc_info:
+        optimizer.set_objective(invalid_weights)
+
+    # Should raise error for invalid columns
+    assert "Invalid cost columns in weights" in str(exc_info.value)
+
+
+def test_add_max_opportunity_global(sample_gdf: gpd.GeoDataFrame):
+    """Test that add_max_opportunity creates a global constraint including all pids."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    limit = 4.0
+
+    optimizer.add_max_opportunity(limit)
+    optimizer.model.update()
+
+    # Should add one gurobi constraint
+    constraint = optimizer.constraints[0]
+    assert len(optimizer.constraints) == 1
+    assert isinstance(constraint, gp.Constr)
+    assert constraint.RHS == limit
+
+    # Constraint should have all variables
+    expr = optimizer.model.getRow(constraint)
+    expected_indices = {optimizer.variables[pid].index for pid in optimizer.pids}
+    used_indices = {expr.getVar(i).index for i in range(expr.size())}
+
+    assert used_indices == expected_indices
+
+
+def test_add_max_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
+    """Test that add_max_opportunity creates a constraint with polygon boundary including only intersecting pids."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    limit = 4.0
+    boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+
+    optimizer.add_max_opportunity(limit, boundary)
+    optimizer.model.update()
+
+    # Should add one gurobi constraint
+    constraint = optimizer.constraints[0]
+    assert len(optimizer.constraints) == 1
+    assert isinstance(constraint, gp.Constr)
+    assert constraint.RHS == limit
+
+    # Should include only intersecting variables
+    expr = optimizer.model.getRow(constraint)
+    expected_indices = {optimizer.variables[pid].index for pid in [1, 2]}
+    used_indices = {expr.getVar(i).index for i in range(expr.size())}
+
+    assert used_indices == expected_indices
+
+
+def test_add_max_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame):
+    """Test that add_max_opportunity creates a constraint with multipolygon boundary including only intersecting pids."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    limit = 4.0
+    boundary = MultiPolygon(
+        [
+            Polygon([(0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5)]),
+            Polygon([(0.5, 0.5), (1, 0.5), (1, 1), (0.5, 1)]),
+        ]
+    )
+
+    optimizer.add_max_opportunity(limit, boundary)
+    optimizer.model.update()
+
+    # Should add one gurobi constraint
+    constraint = optimizer.constraints[0]
+    assert len(optimizer.constraints) == 1
+    assert isinstance(constraint, gp.Constr)
+    assert constraint.RHS == limit
+
+    # Should include only intersecting variables
+    expr = optimizer.model.getRow(constraint)
+    expected_indices = {optimizer.variables[pid].index for pid in [1, 2]}
+    used_indices = {expr.getVar(i).index for i in range(expr.size())}
+
+    assert used_indices == expected_indices
+
+
+def test_add_min_opportunity_global(sample_gdf: gpd.GeoDataFrame):
+    """Test that add_min_opportunity creates a global constraint including all pids."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    limit = 2.0
+
+    optimizer.add_min_opportunity(limit)
+    optimizer.model.update()
+
+    # Should add one gurobi constraint
+    constraint = optimizer.constraints[0]
+    assert len(optimizer.constraints) == 1
+    assert isinstance(constraint, gp.Constr)
+    assert constraint.RHS == limit
+
+    # Should include all variables
+    expr = optimizer.model.getRow(constraint)
+    expected_indices = {optimizer.variables[pid].index for pid in optimizer.pids}
+    used_indices = {expr.getVar(i).index for i in range(expr.size())}
+
+    assert used_indices == expected_indices
+
+
+def test_add_min_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
+    """Test that add_min_opportunity creates a constraint with polygon boundary including only intersecting pids."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    limit = 2.0
+    boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+
+    optimizer.add_min_opportunity(limit, boundary)
+    optimizer.model.update()
+
+    # Should add one gurobi constraint
+    constraint = optimizer.constraints[0]
+    assert len(optimizer.constraints) == 1
+    assert isinstance(constraint, gp.Constr)
+    assert constraint.RHS == limit
+
+    # Should include only intersecting variables
+    expr = optimizer.model.getRow(constraint)
+    expected_indices = {optimizer.variables[pid].index for pid in [1, 2]}
+    used_indices = {expr.getVar(i).index for i in range(expr.size())}
+
+    assert used_indices == expected_indices
+
+
+def test_add_min_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame):
+    """Test that add_min_opportunity creates a constraint with multipolygon boundary including only intersecting pids."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    limit = 2.0
+    boundary = MultiPolygon(
+        [
+            Polygon([(0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5)]),
+            Polygon([(0.5, 0.5), (1, 0.5), (1, 1), (0.5, 1)]),
+        ]
+    )
+
+    optimizer.add_min_opportunity(limit, boundary)
+    optimizer.model.update()
+
+    # Should add one gurobi constraint
+    constraint = optimizer.constraints[0]
+    assert len(optimizer.constraints) == 1
+    assert isinstance(constraint, gp.Constr)
+    assert constraint.RHS == limit
+
+    # Should include only intersecting variables
+    expr = optimizer.model.getRow(constraint)
+    expected_indices = {optimizer.variables[pid].index for pid in [1, 2]}
+    used_indices = {expr.getVar(i).index for i in range(expr.size())}
+
+    assert used_indices == expected_indices
