@@ -1,7 +1,7 @@
 import geopandas as gpd
 import gurobipy as gp
 import pytest
-from shapely.geometry import Point, Polygon, MultiPolygon
+from shapely.geometry import MultiPolygon, Point, Polygon
 
 from urbanopt import PathwayOptimizer
 
@@ -120,7 +120,7 @@ def test_add_max_opportunity_global(sample_gdf: gpd.GeoDataFrame):
     constraint = optimizer.constraints[0]
     assert len(optimizer.constraints) == 1
     assert isinstance(constraint, gp.Constr)
-    assert constraint.RHS == limit
+    assert limit == constraint.RHS
 
     # Constraint should have all variables
     expr = optimizer.model.getRow(constraint)
@@ -144,7 +144,7 @@ def test_add_max_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
     constraint = optimizer.constraints[0]
     assert len(optimizer.constraints) == 1
     assert isinstance(constraint, gp.Constr)
-    assert constraint.RHS == limit
+    assert limit == constraint.RHS
 
     # Should include only intersecting variables
     expr = optimizer.model.getRow(constraint)
@@ -163,7 +163,7 @@ def test_add_max_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame)
         [
             Polygon([(0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5)]),
             Polygon([(0.5, 0.5), (1, 0.5), (1, 1), (0.5, 1)]),
-        ]
+        ],
     )
 
     optimizer.add_max_opportunity(limit, boundary)
@@ -173,7 +173,7 @@ def test_add_max_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame)
     constraint = optimizer.constraints[0]
     assert len(optimizer.constraints) == 1
     assert isinstance(constraint, gp.Constr)
-    assert constraint.RHS == limit
+    assert limit == constraint.RHS
 
     # Should include only intersecting variables
     expr = optimizer.model.getRow(constraint)
@@ -196,7 +196,7 @@ def test_add_min_opportunity_global(sample_gdf: gpd.GeoDataFrame):
     constraint = optimizer.constraints[0]
     assert len(optimizer.constraints) == 1
     assert isinstance(constraint, gp.Constr)
-    assert constraint.RHS == limit
+    assert limit == constraint.RHS
 
     # Should include all variables
     expr = optimizer.model.getRow(constraint)
@@ -220,7 +220,7 @@ def test_add_min_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
     constraint = optimizer.constraints[0]
     assert len(optimizer.constraints) == 1
     assert isinstance(constraint, gp.Constr)
-    assert constraint.RHS == limit
+    assert limit == constraint.RHS
 
     # Should include only intersecting variables
     expr = optimizer.model.getRow(constraint)
@@ -239,7 +239,7 @@ def test_add_min_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame)
         [
             Polygon([(0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5)]),
             Polygon([(0.5, 0.5), (1, 0.5), (1, 1), (0.5, 1)]),
-        ]
+        ],
     )
 
     optimizer.add_min_opportunity(limit, boundary)
@@ -249,7 +249,7 @@ def test_add_min_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame)
     constraint = optimizer.constraints[0]
     assert len(optimizer.constraints) == 1
     assert isinstance(constraint, gp.Constr)
-    assert constraint.RHS == limit
+    assert limit == constraint.RHS
 
     # Should include only intersecting variables
     expr = optimizer.model.getRow(constraint)
