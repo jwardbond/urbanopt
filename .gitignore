@@ -1,6 +1,11 @@
+# Obsolete files
+.archive/
+
 # LLM files
 .cursor/
 .llm/
+.cursorignore
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -100,7 +100,7 @@ class PathwayOptimizer:
 
         Args:
             pids: List of pathway IDs involved.
-            coeff_func: Function returning coefficient per pid.
+            coeff_func: Function mapping pid to coefficient.
             sense: One of "le", "ge", or "eq".
             rhs: Right-hand-side limit.
             tag: Optional tag for constraint tracking/removal.
@@ -250,3 +250,52 @@ class PathwayOptimizer:
             rhs=limit,
             tag=tag,
         )
+
+    def add_mutual_exclusion(
+        self,
+        exclusion_pair: tuple[tuple[str, str], tuple[str, str]],
+        tag: str | None = None,
+    ) -> list[gp.Constr]:
+        """Add mutual exclusion constraints between a pair of pathway types based on start/end types.
+
+        For the given pair of pathway types specified by their start/end points, this method:
+        1. Finds all pathways matching each type specification
+        2. For each pair of intersecting pathways between the groups, adds a constraint
+           ensuring at most one can be selected.
+
+        Args:
+            exclusion_pair: A tuple containing two (start, end) tuples specifying which pathway
+                         types should be mutually exclusive.
+                         Example: (("A", "X"), ("B", "Y")) means pathways from A to X
+                         cannot be selected together with pathways from B to Y if they intersect.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            List of created Gurobi constraint objects.
+        """
+        constraints = []
+        (start1, end1), (start2, end2) = exclusion_pair
+
+        # Find pathways matching each type specification
+        mask1 = (self.data["start"] == start1) & (self.data["end"] == end1)
+        mask2 = (self.data["start"] == start2) & (self.data["end"] == end2)
+        pids1 = self.data[mask1]["pid"].tolist()
+        pids2 = self.data[mask2]["pid"].tolist()
+
+        # For each pair of pathways between the groups
+        for pid1 in pids1:
+            geom1 = self.data[self.data["pid"] == pid1]["geometry"].iloc[0]
+            for pid2 in pids2:
+                geom2 = self.data[self.data["pid"] == pid2]["geometry"].iloc[0]
+                # If they intersect, add mutual exclusion constraint
+                if geom1.intersects(geom2):
+                    constr = self._add_constraint(
+                        pids=[pid1, pid2],
+                        coeff_func=lambda pid: 1.0,  # noqa: ARG005
+                        sense="le",
+                        rhs=1.0,
+                        tag=tag,
+                    )
+                    constraints.append(constr)
+
+        return constraints
