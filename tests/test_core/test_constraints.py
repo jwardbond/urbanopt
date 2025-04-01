@@ -410,3 +410,39 @@ def test_max_opportunity_near_point_crs_validation(sample_gdf: gpd.GeoDataFrame)
         proj_crs="EPSG:3347",
     )
     assert isinstance(constraint, gp.Constr)
+
+
+def test_remove_constraints_by_tag(sample_gdf: gpd.GeoDataFrame):
+    """Test that constraints can be removed by tag."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+
+    # Add constraints with different tags
+    c1 = optimizer.add_max_opportunity(5.0, tag="test_tag")
+    c2 = optimizer.add_min_opportunity(2.0, tag="test_tag")
+    c3 = optimizer.add_max_opportunity(3.0, tag="other_tag")
+
+    # Remove constraints by tag
+    optimizer.remove_constraints("test_tag")
+
+    # Should remove constraints from tracking
+    assert "test_tag" not in optimizer.constraints
+    assert len(optimizer.constraints["other_tag"]) == 1
+
+    # Should remove those same constraints from the model
+    assert c1 not in optimizer.model.getConstrs()
+    assert c2 not in optimizer.model.getConstrs()
+    assert c3 in optimizer.model.getConstrs()
+
+
+def test_remove_constraints_invalid_tag(sample_gdf: gpd.GeoDataFrame):
+    """Test that removing constraints with invalid tag raises error."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    optimizer.add_max_opportunity(5.0, tag="test_tag")
+
+    # Should raise error for non-existent tag
+    with pytest.raises(ValueError) as exc_info:
+        optimizer.remove_constraints("invalid_tag")
+
+    assert "Tag 'invalid_tag' not found in constraints" in str(exc_info.value)

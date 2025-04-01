@@ -450,7 +450,6 @@ class PathwayOptimizer:
             raise RuntimeError(msg)
 
         self.model.update()  # Ensure model state is current before reading values
-
         selected_pids = self.get_selected_pids()
         total_opportunity = self.data[self.data["pid"].isin(selected_pids)][
             "opportunity"
@@ -462,6 +461,29 @@ class PathwayOptimizer:
             "solve_time": self.model.Runtime,
             "selected_count": len(selected_pids),
         }
+
+    def remove_constraints(self, tag: str) -> None:
+        """Remove all constraints associated with a given tag.
+
+        Args:
+            tag: The tag identifying which constraints to remove.
+
+        Raises:
+            ValueError: If the tag does not exist.
+        """
+        if tag not in self.constraints:
+            msg = f"Tag '{tag}' not found in constraints"
+            raise ValueError(msg)
+
+        # Remove constraints from model
+        for constr in self.constraints[tag]:
+            self.model.remove(constr)
+
+        # Remove constraints from tracking dictionary
+        del self.constraints[tag]
+
+        # Update model to reflect changes
+        self.model.update()
 
 
 def _reproject_point(point: Point, from_crs: str, to_crs: str) -> Point:
