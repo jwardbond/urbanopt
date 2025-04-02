@@ -86,8 +86,8 @@ def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
     optimizer.build_variables()
 
     # Add constraints with different senses
-    optimizer.add_max_opportunity(5.0, tag="le_test")  # Uses "le"
-    optimizer.add_min_opportunity(2.0, tag="ge_test")  # Uses "ge"
+    optimizer.add_max_opportunity(5.0, tag="le_test")  # Uses "<="
+    optimizer.add_min_opportunity(2.0, tag="ge_test")  # Uses ">="
 
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_optimizer"
@@ -99,11 +99,11 @@ def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
             config = json.load(f)
 
         # Should save correct constraint senses
-        assert config["constraints"]["le_test"][0]["sense"] == "le", (
-            "Max constraint should use 'le' sense"
+        assert config["constraints"]["le_test"][0]["sense"] == "<=", (
+            "Max constraint should use '<=' sense"
         )
-        assert config["constraints"]["ge_test"][0]["sense"] == "ge", (
-            "Min constraint should use 'ge' sense"
+        assert config["constraints"]["ge_test"][0]["sense"] == ">=", (
+            "Min constraint should use '>=' sense"
         )
 
         # Load and verify constraints work

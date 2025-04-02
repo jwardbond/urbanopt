@@ -272,7 +272,7 @@ def test_add_constraint_senses(sample_gdf: gpd.GeoDataFrame):
     const_le = optimizer._add_constraint(
         pids=optimizer.pids,
         coeff_map=dict.fromkeys(optimizer.pids, 1.0),
-        sense="le",
+        sense="<=",
         rhs=5.0,
         tag="test_le",
     )
@@ -282,7 +282,7 @@ def test_add_constraint_senses(sample_gdf: gpd.GeoDataFrame):
     const_ge = optimizer._add_constraint(
         pids=optimizer.pids,
         coeff_map=dict.fromkeys(optimizer.pids, 1.0),
-        sense="ge",
+        sense=">=",
         rhs=2.0,
         tag="test_ge",
     )
@@ -292,7 +292,7 @@ def test_add_constraint_senses(sample_gdf: gpd.GeoDataFrame):
     const_eq = optimizer._add_constraint(
         pids=optimizer.pids,
         coeff_map=dict.fromkeys(optimizer.pids, 1.0),
-        sense="eq",
+        sense="==",
         rhs=3.0,
         tag="test_eq",
     )

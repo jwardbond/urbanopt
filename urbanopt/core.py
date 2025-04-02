@@ -14,7 +14,7 @@ class ConstraintSchema(BaseModel):
 
     pids: list[int]
     coeffs: list[float]
-    sense: Literal["le", "ge", "eq"]
+    sense: Literal["<=", ">=", "=="]
     rhs: float
 
 
@@ -307,7 +307,7 @@ class PathwayOptimizer:
         self,
         pids: list[int],
         coeff_map: list[float],
-        sense: str,  # "le", "ge", "eq"
+        sense: str,  # "<=", ">=", "=="
         rhs: float,
         tag: str | None = None,
     ) -> gp.Constr:
@@ -316,7 +316,7 @@ class PathwayOptimizer:
         Args:
             pids: List of pathway IDs involved.
             coeff_map: Dictionary mapping pid to coefficient.
-            sense: One of "le", "ge", or "eq".
+            sense: One of "<=", ">=", or "==".
             rhs: Right-hand-side limit.
             tag: Optional tag for constraint tracking/removal.
 
@@ -324,15 +324,15 @@ class PathwayOptimizer:
             The created Gurobi constraint object.
 
         Raises:
-            ValueError: If sense is not one of "le", "ge", or "eq".
+            ValueError: If sense is not one of "<=", ">=", or "==".
         """
         expr = gp.quicksum(coeff_map[pid] * self.variables[pid] for pid in pids)
 
-        if sense == "le":
+        if sense == "<=":
             constr = self.model.addConstr(expr <= rhs)
-        elif sense == "ge":
+        elif sense == ">=":
             constr = self.model.addConstr(expr >= rhs)
-        elif sense == "eq":
+        elif sense == "==":
             constr = self.model.addConstr(expr == rhs)
         else:
             msg = f"Invalid constraint sense: {sense}"
@@ -383,7 +383,7 @@ class PathwayOptimizer:
         return self._add_constraint(
             pids=filtered_pids,
             coeff_map=coeff_map,
-            sense="le",
+            sense="<=",
             rhs=limit,
             tag=tag,
         )
@@ -420,7 +420,7 @@ class PathwayOptimizer:
         return self._add_constraint(
             pids=filtered_pids,
             coeff_map=coeff_map,
-            sense="ge",
+            sense=">=",
             rhs=limit,
             tag=tag,
         )
@@ -466,7 +466,7 @@ class PathwayOptimizer:
                     constr = self._add_constraint(
                         pids=[pid1, pid2],
                         coeff_map=coeff_map,
-                        sense="le",
+                        sense="<=",
                         rhs=1.0,
                         tag=tag,
                     )
@@ -509,7 +509,7 @@ class PathwayOptimizer:
         return self._add_constraint(
             pids=filtered_pids,
             coeff_map=coeff_map,
-            sense="le",
+            sense="<=",
             rhs=max_count,
             tag=tag,
         )
@@ -560,7 +560,7 @@ class PathwayOptimizer:
         return self._add_constraint(
             pids=filtered_pids,
             coeff_map=coeff_map,
-            sense="le",
+            sense="<=",
             rhs=limit,
             tag=tag,
         )
@@ -643,7 +643,7 @@ class PathwayOptimizer:
             pids.append(pid)
             coeffs.append(expr.getCoeff(i))
 
-        sense = "le" if constr.Sense == "<" else "ge" if constr.Sense == ">" else "eq"
+        sense = "<=" if constr.Sense == "<" else ">=" if constr.Sense == ">" else "=="
 
         return ConstraintSchema(pids=pids, coeffs=coeffs, sense=sense, rhs=constr.RHS)
 

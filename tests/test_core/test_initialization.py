@@ -1,7 +1,3 @@
-import json
-import tempfile
-from pathlib import Path
-
 import geopandas as gpd
 import gurobipy as gp
 import pytest
