@@ -263,7 +263,7 @@ def test_mutual_exclusion_multiple_pairs(mutual_exclusion_gdf: gpd.GeoDataFrame)
     assert used_indices == expected_indices
 
 
-def test_add_constraint_helper(sample_gdf: gpd.GeoDataFrame):
+def test_add_constraint_senses(sample_gdf: gpd.GeoDataFrame):
     """Test that _add_constraint handles all constraint types correctly."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -271,7 +271,7 @@ def test_add_constraint_helper(sample_gdf: gpd.GeoDataFrame):
     # Should create less-than constraint
     const_le = optimizer._add_constraint(
         pids=optimizer.pids,
-        coeff_func=lambda pid: 1.0,  # noqa: ARG005
+        coeff_map=dict.fromkeys(optimizer.pids, 1.0),
         sense="le",
         rhs=5.0,
         tag="test_le",
@@ -281,7 +281,7 @@ def test_add_constraint_helper(sample_gdf: gpd.GeoDataFrame):
     # Should create greater-than constraint
     const_ge = optimizer._add_constraint(
         pids=optimizer.pids,
-        coeff_func=lambda pid: 1.0,  # noqa: ARG005
+        coeff_map=dict.fromkeys(optimizer.pids, 1.0),
         sense="ge",
         rhs=2.0,
         tag="test_ge",
@@ -291,7 +291,7 @@ def test_add_constraint_helper(sample_gdf: gpd.GeoDataFrame):
     # Should create equality constraint
     const_eq = optimizer._add_constraint(
         pids=optimizer.pids,
-        coeff_func=lambda pid: 1.0,  # noqa: ARG005
+        coeff_map=dict.fromkeys(optimizer.pids, 1.0),
         sense="eq",
         rhs=3.0,
         tag="test_eq",
@@ -302,36 +302,10 @@ def test_add_constraint_helper(sample_gdf: gpd.GeoDataFrame):
     with pytest.raises(ValueError, match="Invalid constraint sense"):
         optimizer._add_constraint(
             pids=optimizer.pids,
-            coeff_func=lambda pid: 1.0,  # noqa: ARG005
+            coeff_map=dict.fromkeys(optimizer.pids, 1.0),
             sense="invalid",
             rhs=1.0,
         )
-
-
-def test_add_constraint_coefficient_function(sample_gdf: gpd.GeoDataFrame):
-    """Test that constraint coefficients are correctly computed."""
-    optimizer = PathwayOptimizer(sample_gdf)
-    optimizer.build_variables()
-
-    def custom_coeff(pid: int):
-        return (
-            optimizer.data.loc[optimizer.data["pid"] == pid, "opportunity"].iloc[0]
-            * 2.0
-        )
-
-    constr = optimizer._add_constraint(
-        pids=optimizer.pids,
-        coeff_func=custom_coeff,
-        sense="le",
-        rhs=10.0,
-        tag="test_coeff",
-    )
-
-    # Should compute coefficients correctly
-    expr = optimizer.model.getRow(constr)
-    coeffs = [expr.getCoeff(i) for i in range(expr.size())]
-    expected_coeffs = [2.0, 4.0, 6.0]  # 2 * opportunity values
-    assert coeffs == expected_coeffs
 
 
 def test_mixed_constraint_tags(sample_gdf: gpd.GeoDataFrame):

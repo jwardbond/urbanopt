@@ -99,11 +99,11 @@ def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
             config = json.load(f)
 
         # Should save correct constraint senses
-        assert config["constraints"]["le_test"][0]["sense"] == "<=", (
-            "Max constraint should use '<=' sense"
+        assert config["constraints"]["le_test"][0]["sense"] == "le", (
+            "Max constraint should use 'le' sense"
         )
-        assert config["constraints"]["ge_test"][0]["sense"] == ">=", (
-            "Min constraint should use '>=' sense"
+        assert config["constraints"]["ge_test"][0]["sense"] == "ge", (
+            "Min constraint should use 'ge' sense"
         )
 
         # Load and verify constraints work
@@ -154,7 +154,7 @@ def test_load_missing_files():
                 "geometry": [Point(0, 0)],
                 "cost_emb": [10],
                 "cost_transit": [5],
-            }
+            },
         )
         data.to_parquet(path.with_suffix(".geoparquet"))
 

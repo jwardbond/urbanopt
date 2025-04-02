@@ -40,6 +40,7 @@ lint.ignore = [
     "S101",     # 'assert' keyword
     "E501",     # Docstring line too long
     "ANN202",   # Return type for private function
+    "UP035",    # Callable from collections.abc
     ]
 
 

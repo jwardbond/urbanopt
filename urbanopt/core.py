@@ -1,10 +1,30 @@
-import geopandas as gpd
-import gurobipy as gp
 import json
 from pathlib import Path
-from shapely.geometry import Polygon, MultiPolygon, Point
+from typing import Literal
+
+import geopandas as gpd
+import gurobipy as gp
+from pydantic import BaseModel
 from pyproj import Transformer
-from typing import Callable, Dict, Any
+from shapely.geometry import MultiPolygon, Point, Polygon
+
+
+class ConstraintSchema(BaseModel):
+    """Schema for serializing constraints."""
+
+    pids: list[int]
+    coeffs: list[float]
+    sense: Literal["le", "ge", "eq"]
+    rhs: float
+
+
+class OptimizerConfigSchema(BaseModel):
+    """Schema for serializing a PathywayOptimizer Configuration."""
+
+    pids: list[int]
+    cost_columns: list[str]
+    objective: dict[str, float] | None
+    constraints: dict[str, list[ConstraintSchema]]
 
 
 class PathwayOptimizer:
@@ -24,6 +44,10 @@ class PathwayOptimizer:
         model (gp.Model): Gurobi optimization model (initialized by build_variables).
         variables (dict[int, gp.Var]): Dictionary mapping pathway IDs to Gurobi variables
             (initialized by build_variables).
+
+    Internal Attributes:
+        _index_to_pid (dict[int, int]): Dictionary mapping variable indices to pathway IDs.
+        _pid_to_index (dict[int, int]): Dictionary mapping pathway IDs to variable indices.
 
     Example:
         >>> import geopandas as gpd
@@ -70,7 +94,7 @@ class PathwayOptimizer:
             raise ValueError(msg)
 
         # Validate that all PIDs are integers
-        if not gdf["pid"].dtype.kind == "i":
+        if gdf["pid"].dtype.kind != "i":
             msg = "All PIDs must be integers"
             raise ValueError(msg)
 
@@ -87,56 +111,65 @@ class PathwayOptimizer:
         self.cost_columns = [col for col in gdf.columns if col.startswith("cost_")]
 
         # Initialize constraint tracking
-        self.constraints = {}  # Changed to dict to support tags
+        self.constraints = {}
 
-    def _add_constraint(
-        self,
-        pids: list[int],
-        coeff_func: Callable[
-            [int], float
-        ],  # e.g. lambda pid: 1 or lambda pid: self.data.loc[self.data["pid"] == pid, "opportunity"].iloc[0]
-        sense: str,  # "le", "ge", "eq"
-        rhs: float,
-        tag: str | None = None,
-    ) -> gp.Constr:
-        """Generic constraint builder.
+        # Initialize index mapping dictionaries
+        self._index_to_pid = {}
+        self._pid_to_index = {}
+
+        # Initialize objective function
+        self._objective_weights = {}
+
+    @classmethod
+    def load(cls, path: str | Path) -> "PathwayOptimizer":
+        """Load an optimizer from saved files.
 
         Args:
-            pids: List of pathway IDs involved.
-            coeff_func: Function mapping pid to coefficient.
-            sense: One of "le", "ge", or "eq".
-            rhs: Right-hand-side limit.
-            tag: Optional tag for constraint tracking/removal.
+            path: Base path for loading files (without extension).
+                 Will look for {path}.geoparquet and {path}.json.
 
         Returns:
-            The created Gurobi constraint object.
+            A new PathwayOptimizer instance with restored state.
 
         Raises:
-            ValueError: If sense is not one of "le", "ge", or "eq".
+            FileNotFoundError: If either file is missing.
+            ValueError: If saved state is invalid.
         """
-        expr = gp.quicksum(coeff_func(pid) * self.variables[pid] for pid in pids)
+        path = Path(path)
 
-        if sense == "le":
-            constr = self.model.addConstr(expr <= rhs)
-        elif sense == "ge":
-            constr = self.model.addConstr(expr >= rhs)
-        elif sense == "eq":
-            constr = self.model.addConstr(expr == rhs)
-        else:
-            raise ValueError(f"Invalid constraint sense: {sense}")
+        # Load GeoDataFrame first
+        parquet_path = path.with_suffix(".geoparquet")
+        if not parquet_path.exists():
+            msg = f"GeoParquet file not found: {parquet_path}"
+            raise FileNotFoundError(msg)
+        data = gpd.read_parquet(parquet_path)
 
-        # Store constraint with tag if provided
-        if tag:
-            if tag not in self.constraints:
-                self.constraints[tag] = []
-            self.constraints[tag].append(constr)
-        else:
-            if "untagged" not in self.constraints:
-                self.constraints["untagged"] = []
-            self.constraints["untagged"].append(constr)
+        # Load and validate config
+        json_path = path.with_suffix(".json")
+        if not json_path.exists():
+            msg = f"JSON configuration file not found: {json_path}"
+            raise FileNotFoundError(msg)
+        config_dict = json.loads(json_path.read_text())
+        config = OptimizerConfigSchema.model_validate(config_dict)
 
-        self.model.update()
-        return constr
+        if config.pids != data["pid"].tolist():
+            msg = "Saved configuration does not match loaded data"
+            raise ValueError(msg)
+
+        # Build model
+        optimizer = cls(data)
+        optimizer.build_variables()
+
+        # Restore objective if present
+        if config.objective:
+            optimizer.set_objective(config.objective)
+
+        # Deserialize and restore constraints
+        for tag, constr_list in config.constraints.items():
+            for constr in constr_list:
+                optimizer._deserialize_and_register_constraint(constr=constr, tag=tag)
+
+        return optimizer
 
     def build_variables(self) -> None:
         """Create binary variables for each pathway and initialize the Gurobi model.
@@ -153,6 +186,11 @@ class PathwayOptimizer:
             for pid in self.pids
         }
 
+        # Build index mapping dictionaries
+        for pid, var in self.variables.items():
+            self._index_to_pid[var.index] = pid
+            self._pid_to_index[pid] = var.index
+
         # Update the model to include the new variables
         self.model.update()
 
@@ -167,251 +205,29 @@ class PathwayOptimizer:
             ValueError: If any weight key is not a valid cost column.
         """
         # Validate weights
-        invalid_weights = [
-            col for col in weights.keys() if col not in self.cost_columns
-        ]
+        invalid_weights = [col for col in weights if col not in self.cost_columns]
         if invalid_weights:
             msg = f"Invalid cost columns in weights: {invalid_weights}"
             raise ValueError(msg)
 
-        # Create weighted sum expression
-        objective = gp.quicksum(
-            weights[col] * self.data[col][i] * self.variables[pid]
-            for col in weights
-            for i, pid in enumerate(self.pids)
+        # Store weights internally
+        self._objective_weights = weights
+
+        # Create a dictionary to look up costs faster
+        cost_matrix = self.data.set_index("pid")[list(weights.keys())].to_dict(
+            orient="index",
         )
+
+        # Precomputing weights per pid saves having to
+        # construct a huge gurobi linear expression
+        weighted_cost = {
+            pid: sum(weights[col] * cost_matrix[pid][col] for col in weights)
+            for pid in self.pids
+        }
+        objective = gp.quicksum(weighted_cost[pid] for pid in self.pids)
 
         # Set as minimization objective
         self.model.setObjective(objective, gp.GRB.MINIMIZE)
-
-    def add_max_opportunity(
-        self,
-        limit: float,
-        boundary: Polygon | MultiPolygon | None = None,
-        tag: str | None = None,
-    ) -> gp.Constr:
-        """Add a constraint limiting the total opportunity.
-
-        Args:
-            limit: Maximum allowed total opportunity across all selected pathways.
-            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
-                     that intersect with this boundary will be included in the constraint.
-            tag: Optional tag for constraint tracking/removal.
-
-        Returns:
-            The created Gurobi constraint object.
-        """
-        # Filter pathways by boundary if provided
-        if boundary is not None:
-            mask = self.data.geometry.intersects(boundary)
-            filtered_pids = self.data[mask]["pid"].tolist()
-        else:
-            filtered_pids = self.pids
-
-        def opportunity_coeff(pid: int) -> float:
-            return self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
-
-        return self._add_constraint(
-            pids=filtered_pids,
-            coeff_func=opportunity_coeff,
-            sense="le",
-            rhs=limit,
-            tag=tag,
-        )
-
-    def add_min_opportunity(
-        self,
-        limit: float,
-        boundary: Polygon | MultiPolygon | None = None,
-        tag: str | None = None,
-    ) -> gp.Constr:
-        """Add a constraint requiring a minimum total opportunity.
-
-        Args:
-            limit: Minimum required total opportunity across all selected pathways.
-            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
-                     that intersect with this boundary will be included in the constraint.
-            tag: Optional tag for constraint tracking/removal.
-
-        Returns:
-            The created Gurobi constraint object.
-        """
-        # Filter pathways by boundary if provided
-        if boundary is not None:
-            mask = self.data.geometry.intersects(boundary)
-            filtered_pids = self.data[mask]["pid"].tolist()
-        else:
-            filtered_pids = self.pids
-
-        def opportunity_coeff(pid: int) -> float:
-            return self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
-
-        return self._add_constraint(
-            pids=filtered_pids,
-            coeff_func=opportunity_coeff,
-            sense="ge",
-            rhs=limit,
-            tag=tag,
-        )
-
-    def add_mutual_exclusion(
-        self,
-        exclusion_pair: tuple[tuple[str, str], tuple[str, str]],
-        tag: str | None = None,
-    ) -> list[gp.Constr]:
-        """Add mutual exclusion constraints between a pair of pathway types based on start/end types.
-
-        For the given pair of pathway types specified by their start/end points, this method:
-        1. Finds all pathways matching each type specification
-        2. For each pair of intersecting pathways between the groups, adds a constraint
-           ensuring at most one can be selected.
-
-        Args:
-            exclusion_pair: A tuple containing two (start, end) tuples specifying which pathway
-                         types should be mutually exclusive.
-                         Example: (("A", "X"), ("B", "Y")) means pathways from A to X
-                         cannot be selected together with pathways from B to Y if they intersect.
-            tag: Optional tag for constraint tracking/removal.
-
-        Returns:
-            List of created Gurobi constraint objects.
-        """
-        constraints = []
-        (start1, end1), (start2, end2) = exclusion_pair
-
-        # Find pathways matching each type specification
-        mask1 = (self.data["start"] == start1) & (self.data["end"] == end1)
-        mask2 = (self.data["start"] == start2) & (self.data["end"] == end2)
-        pids1 = self.data[mask1]["pid"].tolist()
-        pids2 = self.data[mask2]["pid"].tolist()
-
-        # For each pair of pathways between the groups
-        for pid1 in pids1:
-            geom1 = self.data[self.data["pid"] == pid1]["geometry"].iloc[0]
-            for pid2 in pids2:
-                geom2 = self.data[self.data["pid"] == pid2]["geometry"].iloc[0]
-                if geom1.intersects(geom2):
-                    constr = self._add_constraint(
-                        pids=[pid1, pid2],
-                        coeff_func=lambda pid: 1.0,  # noqa: ARG005
-                        sense="le",
-                        rhs=1.0,
-                        tag=tag,
-                    )
-                    constraints.append(constr)
-
-        return constraints
-
-    def add_pathway_limit(
-        self,
-        start: str,
-        end: str,
-        max_count: float,
-        boundary: Polygon | MultiPolygon | None = None,
-        tag: str | None = None,
-    ) -> gp.Constr:
-        """Add a constraint limiting the number of selected pathways of a specific type.
-
-        Args:
-            start: Start point/area identifier.
-            end: End point/area identifier.
-            max_count: Maximum number of pathways that can be selected.
-            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
-                     that intersect with this boundary will be included in the constraint.
-            tag: Optional tag for constraint tracking/removal.
-
-        Returns:
-            The created Gurobi constraint object.
-        """
-        # Filter pathways by start/end
-        mask = (self.data["start"] == start) & (self.data["end"] == end)
-
-        # Apply boundary filter if provided
-        if boundary is not None:
-            mask = mask & self.data.geometry.intersects(boundary)
-
-        filtered_pids = self.data[mask]["pid"].tolist()
-
-        return self._add_constraint(
-            pids=filtered_pids,
-            coeff_func=lambda pid: 1.0,  # noqa: ARG005
-            sense="le",
-            rhs=max_count,
-            tag=tag,
-        )
-
-    def add_max_opportunity_near_point(
-        self,
-        limit: float,
-        point: Point,
-        distance: float,
-        proj_crs: str | None = None,
-        tag: str | None = None,
-    ) -> gp.Constr:
-        """Add a constraint limiting total opportunity for pathways near a point.
-
-        Args:
-            limit: Maximum allowed total opportunity across selected pathways.
-            point: Shapely Point to measure distance from.
-            distance: Maximum distance from point to pathway centroid.
-            proj_crs: Optional CRS to project geometries into before distance calculation.
-                 If not provided, uses the current CRS which must be projected.
-            tag: Optional tag for constraint tracking/removal.
-
-        Returns:
-            The created Gurobi constraint object.
-
-        Raises:
-            ValueError: If no CRS is provided and current CRS is not projected.
-        """
-        # If CRS provided, project data and point
-        if proj_crs is not None:
-            data = self.data.copy().to_crs(proj_crs)
-            point = _reproject_point(point, self.crs, proj_crs)
-        else:
-            if not self.data.crs or self.data.crs.is_geographic:
-                msg = "Must provide projected CRS for distance calculation"
-                raise ValueError(msg)
-            data = self.data
-
-        # Filter pathways by distance from point to centroid
-        mask = data.geometry.centroid.distance(point) <= distance
-        filtered_pids = data[mask]["pid"].tolist()
-
-        def opportunity_coeff(pid: int) -> float:
-            return self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
-
-        return self._add_constraint(
-            pids=filtered_pids,
-            coeff_func=opportunity_coeff,
-            sense="le",
-            rhs=limit,
-            tag=tag,
-        )
-
-    def solve(self) -> None:
-        """Solve the optimization model.
-
-        This method optimizes the model with the current objective and constraints.
-        After solving, use get_selected_pids() to get the selected pathways or
-        get_summary() for optimization results.
-
-        Raises:
-            RuntimeError: If the model is infeasible or unbounded.
-        """
-        self.model.optimize()
-        self.model.update()  # Ensure model state is current before status check
-        status = self.model.Status
-
-        if status == gp.GRB.INFEASIBLE:
-            msg = "Model is infeasible"
-            raise RuntimeError(msg)
-        elif status == gp.GRB.UNBOUNDED:
-            msg = "Model is unbounded"
-            raise RuntimeError(msg)
-        elif status != gp.GRB.OPTIMAL:
-            msg = f"Optimization failed with status {status}"
-            raise RuntimeError(msg)
 
     def get_selected_pids(self) -> list[int]:
         """Get the list of selected pathway IDs from the solved model.
@@ -487,6 +303,292 @@ class PathwayOptimizer:
         # Update model to reflect changes
         self.model.update()
 
+    def _add_constraint(
+        self,
+        pids: list[int],
+        coeff_map: list[float],
+        sense: str,  # "le", "ge", "eq"
+        rhs: float,
+        tag: str | None = None,
+    ) -> gp.Constr:
+        """Generic constraint builder.
+
+        Args:
+            pids: List of pathway IDs involved.
+            coeff_map: Dictionary mapping pid to coefficient.
+            sense: One of "le", "ge", or "eq".
+            rhs: Right-hand-side limit.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            The created Gurobi constraint object.
+
+        Raises:
+            ValueError: If sense is not one of "le", "ge", or "eq".
+        """
+        expr = gp.quicksum(coeff_map[pid] * self.variables[pid] for pid in pids)
+
+        if sense == "le":
+            constr = self.model.addConstr(expr <= rhs)
+        elif sense == "ge":
+            constr = self.model.addConstr(expr >= rhs)
+        elif sense == "eq":
+            constr = self.model.addConstr(expr == rhs)
+        else:
+            msg = f"Invalid constraint sense: {sense}"
+            raise ValueError(msg)
+
+        # Store constraint with tag if provided
+        if tag:
+            if tag not in self.constraints:
+                self.constraints[tag] = []
+            self.constraints[tag].append(constr)
+        else:
+            if "untagged" not in self.constraints:
+                self.constraints["untagged"] = []
+            self.constraints["untagged"].append(constr)
+
+        self.model.update()
+        return constr
+
+    def add_max_opportunity(
+        self,
+        limit: float,
+        boundary: Polygon | MultiPolygon | None = None,
+        tag: str | None = None,
+    ) -> gp.Constr:
+        """Add a constraint limiting the total opportunity.
+
+        Args:
+            limit: Maximum allowed total opportunity across all selected pathways.
+            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
+                     that intersect with this boundary will be included in the constraint.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            The created Gurobi constraint object.
+        """
+        # Filter pathways by boundary if provided
+        if boundary is not None:
+            mask = self.data.geometry.intersects(boundary)
+            filtered_pids = self.data[mask]["pid"].tolist()
+        else:
+            filtered_pids = self.pids
+
+        coeff_map = {
+            pid: self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
+            for pid in filtered_pids
+        }
+
+        return self._add_constraint(
+            pids=filtered_pids,
+            coeff_map=coeff_map,
+            sense="le",
+            rhs=limit,
+            tag=tag,
+        )
+
+    def add_min_opportunity(
+        self,
+        limit: float,
+        boundary: Polygon | MultiPolygon | None = None,
+        tag: str | None = None,
+    ) -> gp.Constr:
+        """Add a constraint requiring a minimum total opportunity.
+
+        Args:
+            limit: Minimum required total opportunity across all selected pathways.
+            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
+                     that intersect with this boundary will be included in the constraint.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            The created Gurobi constraint object.
+        """
+        # Filter pathways by boundary if provided
+        if boundary is not None:
+            mask = self.data.geometry.intersects(boundary)
+            filtered_pids = self.data[mask]["pid"].tolist()
+        else:
+            filtered_pids = self.pids
+
+        coeff_map = {
+            pid: self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
+            for pid in filtered_pids
+        }
+
+        return self._add_constraint(
+            pids=filtered_pids,
+            coeff_map=coeff_map,
+            sense="ge",
+            rhs=limit,
+            tag=tag,
+        )
+
+    def add_mutual_exclusion(
+        self,
+        exclusion_pair: tuple[tuple[str, str], tuple[str, str]],
+        tag: str | None = None,
+    ) -> list[gp.Constr]:
+        """Add mutual exclusion constraints between a pair of pathway types based on start/end types.
+
+        For the given pair of pathway types specified by their start/end points, this method:
+        1. Finds all pathways matching each type specification
+        2. For each pair of intersecting pathways between the groups, adds a constraint
+           ensuring at most one can be selected.
+
+        Args:
+            exclusion_pair: A tuple containing two (start, end) tuples specifying which pathway
+                         types should be mutually exclusive.
+                         Example: (("A", "X"), ("B", "Y")) means pathways from A to X
+                         cannot be selected together with pathways from B to Y if they intersect.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            List of created Gurobi constraint objects.
+        """
+        constraints = []
+        (start1, end1), (start2, end2) = exclusion_pair
+
+        # Find pathways matching each type specification
+        mask1 = (self.data["start"] == start1) & (self.data["end"] == end1)
+        mask2 = (self.data["start"] == start2) & (self.data["end"] == end2)
+        pids1 = self.data[mask1]["pid"].tolist()
+        pids2 = self.data[mask2]["pid"].tolist()
+
+        # For each pair of pathways between the groups
+        for pid1 in pids1:
+            geom1 = self.data[self.data["pid"] == pid1]["geometry"].iloc[0]
+            for pid2 in pids2:
+                geom2 = self.data[self.data["pid"] == pid2]["geometry"].iloc[0]
+                if geom1.intersects(geom2):
+                    coeff_map = {pid1: 1.0, pid2: 1.0}
+                    constr = self._add_constraint(
+                        pids=[pid1, pid2],
+                        coeff_map=coeff_map,
+                        sense="le",
+                        rhs=1.0,
+                        tag=tag,
+                    )
+                    constraints.append(constr)
+
+        return constraints
+
+    def add_pathway_limit(
+        self,
+        start: str,
+        end: str,
+        max_count: float,
+        boundary: Polygon | MultiPolygon | None = None,
+        tag: str | None = None,
+    ) -> gp.Constr:
+        """Add a constraint limiting the number of selected pathways of a specific type.
+
+        Args:
+            start: Start point/area identifier.
+            end: End point/area identifier.
+            max_count: Maximum number of pathways that can be selected.
+            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
+                     that intersect with this boundary will be included in the constraint.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            The created Gurobi constraint object.
+        """
+        # Filter pathways by start/end
+        mask = (self.data["start"] == start) & (self.data["end"] == end)
+
+        # Apply boundary filter if provided
+        if boundary is not None:
+            mask = mask & self.data.geometry.intersects(boundary)
+
+        filtered_pids = self.data[mask]["pid"].tolist()
+
+        coeff_map = dict.fromkeys(filtered_pids, 1.0)
+
+        return self._add_constraint(
+            pids=filtered_pids,
+            coeff_map=coeff_map,
+            sense="le",
+            rhs=max_count,
+            tag=tag,
+        )
+
+    def add_max_opportunity_near_point(
+        self,
+        limit: float,
+        point: Point,
+        distance: float,
+        proj_crs: str | None = None,
+        tag: str | None = None,
+    ) -> gp.Constr:
+        """Add a constraint limiting total opportunity for pathways near a point.
+
+        Args:
+            limit: Maximum allowed total opportunity across selected pathways.
+            point: Shapely Point to measure distance from.
+            distance: Maximum distance from point to pathway centroid.
+            proj_crs: Optional CRS to project geometries into before distance calculation.
+                 If not provided, uses the current CRS which must be projected.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            The created Gurobi constraint object.
+
+        Raises:
+            ValueError: If no CRS is provided and current CRS is not projected.
+        """
+        # If CRS provided, project data and point
+        if proj_crs is not None:
+            data = self.data.copy().to_crs(proj_crs)
+            point = _reproject_point(point, self.crs, proj_crs)
+        else:
+            if not self.data.crs or self.data.crs.is_geographic:
+                msg = "Must provide projected CRS for distance calculation"
+                raise ValueError(msg)
+            data = self.data
+
+        # Filter pathways by distance from point to centroid
+        mask = data.geometry.centroid.distance(point) <= distance
+        filtered_pids = data[mask]["pid"].tolist()
+
+        coeff_map = {
+            pid: self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
+            for pid in filtered_pids
+        }
+
+        return self._add_constraint(
+            pids=filtered_pids,
+            coeff_map=coeff_map,
+            sense="le",
+            rhs=limit,
+            tag=tag,
+        )
+
+    def solve(self) -> None:
+        """Solve the optimization model.
+
+        This method optimizes the model with the current objective and constraints.
+        After solving, use get_selected_pids() to get the selected pathways or
+        get_summary() for optimization results.
+
+        Raises:
+            RuntimeError: If the model is infeasible or unbounded.
+        """
+        self.model.optimize()
+        self.model.update()  # Ensure model state is current before status check
+        status = self.model.Status
+
+        if status == gp.GRB.INFEASIBLE:
+            msg = "Model is infeasible"
+            raise RuntimeError(msg)
+        elif status == gp.GRB.UNBOUNDED:
+            msg = "Model is unbounded"
+            raise RuntimeError(msg)
+        elif status != gp.GRB.OPTIMAL:
+            msg = f"Optimization failed with status {status}"
+            raise RuntimeError(msg)
+
     def save(self, path: str | Path) -> None:
         """Save the optimizer state to disk.
 
@@ -512,127 +614,54 @@ class PathwayOptimizer:
             raise ValueError(msg)
 
         # Save GeoDataFrame to GeoParquet
-        parquet_path = path.with_suffix(".geoparquet")
-        self.data.to_parquet(parquet_path)
+        self.data.to_parquet(path.with_suffix(".geoparquet"))
 
-        # Extract model configuration
-        config = {
-            "pids": self.pids,
-            "cost_columns": self.cost_columns,
-            "constraints": {},
-            "objective": None,
+        # Build constraint schema
+        constraint_config: dict[str, list[ConstraintSchema]] = {
+            tag: [self._serialize_constraint(c) for c in cs]
+            for tag, cs in self.constraints.items()
         }
 
-        # Save objective if set
-        if self.model.getAttr("ModelSense") == gp.GRB.MINIMIZE:
-            obj = self.model.getObjective()
-            weights = {}
-            for i in range(obj.size()):
-                var = obj.getVar(i)
-                coeff = obj.getCoeff(i)
-                pid = next(
-                    pid for pid, v in self.variables.items() if v.index == var.index
-                )
-                for col in self.cost_columns:
-                    if (
-                        abs(coeff - self.data.loc[self.data["pid"] == pid, col].iloc[0])
-                        < 1e-6
-                    ):
-                        weights[col] = 1.0
-                        break
-            config["objective"] = weights
+        # Build the full schema
+        config = OptimizerConfigSchema(
+            pids=self.pids,
+            cost_columns=self.cost_columns,
+            objective=self._objective_weights
+            if self._objective_weights
+            else None,  # HACK
+            constraints=constraint_config,
+        )
 
-        # Save constraints by tag
-        for tag, constrs in self.constraints.items():
-            config["constraints"][tag] = []
-            for constr in constrs:
-                expr = self.model.getRow(constr)
-                pids = []
-                coeffs = []
-                for i in range(expr.size()):
-                    var = expr.getVar(i)
-                    pid = next(
-                        pid for pid, v in self.variables.items() if v.index == var.index
-                    )
-                    pids.append(pid)
-                    coeffs.append(expr.getCoeff(i))
+        path.with_suffix(".json").write_text(config.model_dump_json(indent=2))
 
-                config["constraints"][tag].append(
-                    {
-                        "pids": pids,
-                        "coeffs": coeffs,
-                        "sense": "<="
-                        if constr.Sense == "<"
-                        else ">="
-                        if constr.Sense == ">"
-                        else "==",
-                        "rhs": constr.RHS,
-                    }
-                )
+    def _serialize_constraint(self, constr: gp.Constr) -> ConstraintSchema:
+        expr = self.model.getRow(constr)
+        pids, coeffs = [], []
+        for i in range(expr.size()):
+            var = expr.getVar(i)
+            pid = self._index_to_pid[var.index]
+            pids.append(pid)
+            coeffs.append(expr.getCoeff(i))
 
-        # Save configuration to JSON
-        json_path = path.with_suffix(".json")
-        json_path.write_text(json.dumps(config, indent=2))
+        sense = "le" if constr.Sense == "<" else "ge" if constr.Sense == ">" else "eq"
 
-    @classmethod
-    def load(cls, path: str | Path) -> "PathwayOptimizer":
-        """Load an optimizer from saved files.
+        return ConstraintSchema(pids=pids, coeffs=coeffs, sense=sense, rhs=constr.RHS)
 
-        Args:
-            path: Base path for loading files (without extension).
-                 Will look for {path}.geoparquet and {path}.json.
-
-        Returns:
-            A new PathwayOptimizer instance with restored state.
-
-        Raises:
-            FileNotFoundError: If either file is missing.
-            ValueError: If saved state is invalid.
-        """
-        path = Path(path)
-
-        # Load GeoDataFrame
-        parquet_path = path.with_suffix(".geoparquet")
-        if not parquet_path.exists():
-            msg = f"GeoParquet file not found: {parquet_path}"
-            raise FileNotFoundError(msg)
-
-        data = gpd.read_parquet(parquet_path)
-        optimizer = cls(data)
-        optimizer.build_variables()
-
-        # Load configuration
-        json_path = path.with_suffix(".json")
-        if not json_path.exists():
-            msg = f"JSON configuration file not found: {json_path}"
-            raise FileNotFoundError(msg)
-
-        config = json.loads(json_path.read_text())
-
-        # Verify configuration matches data
-        if config["pids"] != optimizer.pids:
-            msg = "Saved configuration does not match loaded data"
-            raise ValueError(msg)
-
-        # Restore objective if present
-        if config["objective"]:
-            optimizer.set_objective(config["objective"])
-
-        # Restore constraints
-        for tag, constrs in config["constraints"].items():
-            for constr in constrs:
-                optimizer._add_constraint(
-                    pids=constr["pids"],
-                    coeff_func=lambda pid,
-                    coeffs=dict(zip(constr["pids"], constr["coeffs"])): coeffs[pid],
-                    sense={"<=": "le", ">=": "ge", "==": "eq"}[
-                        constr["sense"]
-                    ],  # Map standard format to Gurobi format
-                    rhs=constr["rhs"],
-                    tag=tag,
-                )
-
-        return optimizer
+    def _deserialize_and_register_constraint(
+        self,
+        constr: ConstraintSchema,
+        tag: str,
+    ) -> gp.Constr:
+        coeff_map = {
+            constr.pids[i]: constr.coeffs[i] for i, _ in enumerate(constr.pids)
+        }
+        return self._add_constraint(
+            pids=constr.pids,
+            coeff_map=coeff_map,
+            sense=constr.sense,
+            rhs=constr.rhs,
+            tag=tag,
+        )
 
 
 def _reproject_point(point: Point, from_crs: str, to_crs: str) -> Point:
