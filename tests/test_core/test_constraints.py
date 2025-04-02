@@ -17,14 +17,14 @@ def test_add_max_opportunity_global(sample_gdf: gpd.GeoDataFrame):
     optimizer.model.update()
 
     # Should create one constraint in untagged group
-    assert "untagged" in optimizer.constraints
-    assert len(optimizer.constraints["untagged"]) == 1
+    assert "untagged" in optimizer._constraints
+    assert len(optimizer._constraints["untagged"]) == 1
     assert isinstance(constraint, gp.Constr)
     assert limit == constraint.RHS
 
     # Should include all pathway variables
     expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer.variables[pid].index for pid in optimizer.pids}
+    expected_indices = {optimizer._variables[pid].index for pid in optimizer.pids}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
@@ -40,14 +40,14 @@ def test_add_max_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
     optimizer.model.update()
 
     # Should create one constraint in untagged group
-    assert "untagged" in optimizer.constraints
-    assert len(optimizer.constraints["untagged"]) == 1
+    assert "untagged" in optimizer._constraints
+    assert len(optimizer._constraints["untagged"]) == 1
     assert isinstance(constraint, gp.Constr)
     assert limit == constraint.RHS
 
     # Should include only intersecting variables
     expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer.variables[pid].index for pid in [1, 2]}
+    expected_indices = {optimizer._variables[pid].index for pid in [1, 2]}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
@@ -68,14 +68,14 @@ def test_add_max_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame)
     optimizer.model.update()
 
     # Should create one constraint in untagged group
-    assert "untagged" in optimizer.constraints
-    assert len(optimizer.constraints["untagged"]) == 1
+    assert "untagged" in optimizer._constraints
+    assert len(optimizer._constraints["untagged"]) == 1
     assert isinstance(constraint, gp.Constr)
     assert limit == constraint.RHS
 
     # Should include only intersecting variables
     expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer.variables[pid].index for pid in [1, 2]}
+    expected_indices = {optimizer._variables[pid].index for pid in [1, 2]}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
@@ -89,9 +89,9 @@ def test_add_max_opportunity_with_tag(sample_gdf: gpd.GeoDataFrame):
     c2 = optimizer.add_max_opportunity(5.0, tag="test_tag")
 
     # Should store both constraints under the same tag
-    assert "test_tag" in optimizer.constraints
-    assert len(optimizer.constraints["test_tag"]) == 2
-    assert optimizer.constraints["test_tag"] == [c1, c2]
+    assert "test_tag" in optimizer._constraints
+    assert len(optimizer._constraints["test_tag"]) == 2
+    assert optimizer._constraints["test_tag"] == [c1, c2]
 
 
 def test_add_min_opportunity_global(sample_gdf: gpd.GeoDataFrame):
@@ -104,14 +104,14 @@ def test_add_min_opportunity_global(sample_gdf: gpd.GeoDataFrame):
     optimizer.model.update()
 
     # Should add one constraint to untagged group
-    assert "untagged" in optimizer.constraints
-    assert len(optimizer.constraints["untagged"]) == 1
+    assert "untagged" in optimizer._constraints
+    assert len(optimizer._constraints["untagged"]) == 1
     assert isinstance(constraint, gp.Constr)
     assert limit == constraint.RHS
 
     # Should include all variables
     expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer.variables[pid].index for pid in optimizer.pids}
+    expected_indices = {optimizer._variables[pid].index for pid in optimizer.pids}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
 
     assert used_indices == expected_indices
@@ -128,14 +128,14 @@ def test_add_min_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
     optimizer.model.update()
 
     # Should create one constraint in untagged group
-    assert "untagged" in optimizer.constraints
-    assert len(optimizer.constraints["untagged"]) == 1
+    assert "untagged" in optimizer._constraints
+    assert len(optimizer._constraints["untagged"]) == 1
     assert isinstance(constraint, gp.Constr)
     assert limit == constraint.RHS
 
     # Should include only intersecting variables
     expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer.variables[pid].index for pid in [1, 2]}
+    expected_indices = {optimizer._variables[pid].index for pid in [1, 2]}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
@@ -156,14 +156,14 @@ def test_add_min_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame)
     optimizer.model.update()
 
     # Should create one constraint in untagged group
-    assert "untagged" in optimizer.constraints
-    assert len(optimizer.constraints["untagged"]) == 1
+    assert "untagged" in optimizer._constraints
+    assert len(optimizer._constraints["untagged"]) == 1
     assert isinstance(constraint, gp.Constr)
     assert limit == constraint.RHS
 
     # Should include only intersecting variables
     expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer.variables[pid].index for pid in [1, 2]}
+    expected_indices = {optimizer._variables[pid].index for pid in [1, 2]}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
@@ -177,12 +177,12 @@ def test_add_min_opportunity_with_tag(sample_gdf: gpd.GeoDataFrame):
     c2 = optimizer.add_min_opportunity(3.0)  # Untagged
 
     # Should store constraints in appropriate groups
-    assert "min_tag" in optimizer.constraints
-    assert "untagged" in optimizer.constraints
-    assert len(optimizer.constraints["min_tag"]) == 1
-    assert len(optimizer.constraints["untagged"]) == 1
-    assert optimizer.constraints["min_tag"][0] == c1
-    assert optimizer.constraints["untagged"][0] == c2
+    assert "min_tag" in optimizer._constraints
+    assert "untagged" in optimizer._constraints
+    assert len(optimizer._constraints["min_tag"]) == 1
+    assert len(optimizer._constraints["untagged"]) == 1
+    assert optimizer._constraints["min_tag"][0] == c1
+    assert optimizer._constraints["untagged"][0] == c2
 
 
 def test_mutual_exclusion_basic_intersection(mutual_exclusion_gdf: gpd.GeoDataFrame):
@@ -198,7 +198,7 @@ def test_mutual_exclusion_basic_intersection(mutual_exclusion_gdf: gpd.GeoDataFr
 
     # Should create one constraint for the intersecting pair
     assert len(constraints) == 1
-    assert len(optimizer.constraints["basic"]) == 1
+    assert len(optimizer._constraints["basic"]) == 1
 
     # Should have correct constraint structure
     constr = constraints[0]
@@ -209,7 +209,7 @@ def test_mutual_exclusion_basic_intersection(mutual_exclusion_gdf: gpd.GeoDataFr
 
     # Should include correct variables (pid 1 and pid 3)
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
-    expected_indices = {optimizer.variables[1].index, optimizer.variables[3].index}
+    expected_indices = {optimizer._variables[1].index, optimizer._variables[3].index}
     assert used_indices == expected_indices
 
 
@@ -226,7 +226,7 @@ def test_mutual_exclusion_no_intersections(mutual_exclusion_gdf: gpd.GeoDataFram
 
     # Should not create any constraints
     assert len(constraints) == 0
-    assert "no_intersect" not in optimizer.constraints
+    assert "no_intersect" not in optimizer._constraints
 
 
 def test_mutual_exclusion_multiple_pairs(mutual_exclusion_gdf: gpd.GeoDataFrame):
@@ -248,7 +248,7 @@ def test_mutual_exclusion_multiple_pairs(mutual_exclusion_gdf: gpd.GeoDataFrame)
 
     # Should create correct number of constraints (only one pair intersects)
     assert len(all_constraints) == 1
-    assert len(optimizer.constraints["multi"]) == 1
+    assert len(optimizer._constraints["multi"]) == 1
 
     # Should have correct constraint structure
     constr = all_constraints[0]
@@ -259,7 +259,7 @@ def test_mutual_exclusion_multiple_pairs(mutual_exclusion_gdf: gpd.GeoDataFrame)
 
     # Should include correct variables (pid 1 and pid 3)
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
-    expected_indices = {optimizer.variables[1].index, optimizer.variables[3].index}
+    expected_indices = {optimizer._variables[1].index, optimizer._variables[3].index}
     assert used_indices == expected_indices
 
 
@@ -321,10 +321,10 @@ def test_mixed_constraint_tags(sample_gdf: gpd.GeoDataFrame):
     c4 = optimizer.add_min_opportunity(1.0, tag="other")
 
     # Should organize constraints by tag correctly
-    assert set(optimizer.constraints.keys()) == {"mixed", "other", "untagged"}
-    assert optimizer.constraints["mixed"] == [c1, c2]
-    assert optimizer.constraints["other"] == [c4]
-    assert optimizer.constraints["untagged"] == [c3]
+    assert set(optimizer._constraints.keys()) == {"mixed", "other", "untagged"}
+    assert optimizer._constraints["mixed"] == [c1, c2]
+    assert optimizer._constraints["other"] == [c4]
+    assert optimizer._constraints["untagged"] == [c3]
 
 
 def test_max_opportunity_near_point(sample_gdf: gpd.GeoDataFrame):
@@ -345,8 +345,8 @@ def test_max_opportunity_near_point(sample_gdf: gpd.GeoDataFrame):
     optimizer.model.update()
 
     # Should create one constraint in untagged group
-    assert "untagged" in optimizer.constraints
-    assert len(optimizer.constraints["untagged"]) == 1
+    assert "untagged" in optimizer._constraints
+    assert len(optimizer._constraints["untagged"]) == 1
     assert isinstance(constraint, gp.Constr)
     assert limit == constraint.RHS
 
@@ -358,7 +358,7 @@ def test_max_opportunity_near_point(sample_gdf: gpd.GeoDataFrame):
     projected_point = _reproject_point(point, sample_gdf.crs, proj_crs)
     mask = projected_data.geometry.centroid.distance(projected_point) <= distance
     expected_pids = projected_data[mask]["pid"].tolist()
-    expected_indices = {optimizer.variables[pid].index for pid in expected_pids}
+    expected_indices = {optimizer._variables[pid].index for pid in expected_pids}
 
     assert used_indices == expected_indices
 
@@ -400,8 +400,8 @@ def test_remove_constraints_by_tag(sample_gdf: gpd.GeoDataFrame):
     optimizer.remove_constraints("test_tag")
 
     # Should remove constraints from tracking
-    assert "test_tag" not in optimizer.constraints
-    assert len(optimizer.constraints["other_tag"]) == 1
+    assert "test_tag" not in optimizer._constraints
+    assert len(optimizer._constraints["other_tag"]) == 1
 
     # Should remove those same constraints from the model
     assert c1 not in optimizer.model.getConstrs()

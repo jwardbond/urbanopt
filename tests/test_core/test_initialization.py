@@ -92,6 +92,6 @@ def test_build_variables(sample_gdf: gpd.GeoDataFrame):
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
-    # Should create one variable per pathway
-    assert len(optimizer.variables) == len(optimizer.pids)
-    assert all(var.VType == gp.GRB.BINARY for var in optimizer.variables.values())
+    # Test that variables are created correctly
+    assert len(optimizer._variables) == len(optimizer.pids)
+    assert all(var.VType == gp.GRB.BINARY for var in optimizer._variables.values())

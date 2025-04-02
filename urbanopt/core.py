@@ -40,14 +40,15 @@ class PathwayOptimizer:
         crs: Coordinate reference system from input GeoDataFrame.
         pids (list[int]): List of pathway IDs.
         cost_columns (list[str]): List of cost-related column names.
-        constraints (dict[str, list[gp.Constr]]): Dictionary mapping tags to lists of constraints.
         model (gp.Model): Gurobi optimization model (initialized by build_variables).
-        variables (dict[int, gp.Var]): Dictionary mapping pathway IDs to Gurobi variables
-            (initialized by build_variables).
 
     Internal Attributes:
+        _variables (dict[int, gp.Var]): Dictionary mapping pathway IDs to Gurobi variables
+            (initialized by build_variables).
+        _constraints (dict[str, list[gp.Constr]]): Dictionary mapping tags to lists of constraints.
         _index_to_pid (dict[int, int]): Dictionary mapping variable indices to pathway IDs.
-        _pid_to_index (dict[int, int]): Dictionary mapping pathway IDs to variable indices.
+        _objective_weights (dict[str, float]): Dictionary mapping cost column names to their weights
+            in the objective function.
 
     Example:
         >>> import geopandas as gpd
@@ -111,11 +112,10 @@ class PathwayOptimizer:
         self.cost_columns = [col for col in gdf.columns if col.startswith("cost_")]
 
         # Initialize constraint tracking
-        self.constraints = {}
+        self._constraints = {}
 
         # Initialize index mapping dictionaries
         self._index_to_pid = {}
-        self._pid_to_index = {}
 
         # Initialize objective function
         self._objective_weights = {}
@@ -174,22 +174,21 @@ class PathwayOptimizer:
     def build_variables(self) -> None:
         """Create binary variables for each pathway and initialize the Gurobi model.
 
-        Creates one binary variable per pathway ID and stores them in self.variables.
+        Creates one binary variable per pathway ID and stores them in self._variables.
         Also creates and stores the Gurobi model in self.model.
         """
         # Create the model
         self.model = gp.Model("pathway_optimizer")
 
         # Create binary variables for each pathway
-        self.variables = {
+        self._variables = {
             pid: self.model.addVar(vtype=gp.GRB.BINARY, name=f"x_{pid}")
             for pid in self.pids
         }
 
         # Build index mapping dictionaries
-        for pid, var in self.variables.items():
+        for pid, var in self._variables.items():
             self._index_to_pid[var.index] = pid
-            self._pid_to_index[pid] = var.index
 
         # Update the model to include the new variables
         self.model.update()
@@ -246,7 +245,7 @@ class PathwayOptimizer:
 
         return [
             pid
-            for pid, var in self.variables.items()
+            for pid, var in self._variables.items()
             if abs(var.X - 1.0) < 1e-6  # Check if binary variable is 1
         ]
 
@@ -289,16 +288,16 @@ class PathwayOptimizer:
         Raises:
             ValueError: If the tag does not exist.
         """
-        if tag not in self.constraints:
+        if tag not in self._constraints:
             msg = f"Tag '{tag}' not found in constraints"
             raise ValueError(msg)
 
         # Remove constraints from model
-        for constr in self.constraints[tag]:
+        for constr in self._constraints[tag]:
             self.model.remove(constr)
 
         # Remove constraints from tracking dictionary
-        del self.constraints[tag]
+        del self._constraints[tag]
 
         # Update model to reflect changes
         self.model.update()
@@ -306,7 +305,7 @@ class PathwayOptimizer:
     def _add_constraint(
         self,
         pids: list[int],
-        coeff_map: list[float],
+        coeff_map: dict[int, float],
         sense: str,  # "<=", ">=", "=="
         rhs: float,
         tag: str | None = None,
@@ -326,7 +325,7 @@ class PathwayOptimizer:
         Raises:
             ValueError: If sense is not one of "<=", ">=", or "==".
         """
-        expr = gp.quicksum(coeff_map[pid] * self.variables[pid] for pid in pids)
+        expr = gp.quicksum(coeff_map[pid] * self._variables[pid] for pid in pids)
 
         if sense == "<=":
             constr = self.model.addConstr(expr <= rhs)
@@ -340,13 +339,13 @@ class PathwayOptimizer:
 
         # Store constraint with tag if provided
         if tag:
-            if tag not in self.constraints:
-                self.constraints[tag] = []
-            self.constraints[tag].append(constr)
+            if tag not in self._constraints:
+                self._constraints[tag] = []
+            self._constraints[tag].append(constr)
         else:
-            if "untagged" not in self.constraints:
-                self.constraints["untagged"] = []
-            self.constraints["untagged"].append(constr)
+            if "untagged" not in self._constraints:
+                self._constraints["untagged"] = []
+            self._constraints["untagged"].append(constr)
 
         self.model.update()
         return constr
@@ -604,7 +603,7 @@ class PathwayOptimizer:
             RuntimeError: If model has not been built yet.
             ValueError: If path is invalid.
         """
-        if not hasattr(self, "model") or not hasattr(self, "variables"):
+        if not hasattr(self, "model") or not hasattr(self, "_variables"):
             msg = "Model has not been built yet. Call build_variables() first."
             raise RuntimeError(msg)
 
@@ -619,7 +618,7 @@ class PathwayOptimizer:
         # Build constraint schema
         constraint_config: dict[str, list[ConstraintSchema]] = {
             tag: [self._serialize_constraint(c) for c in cs]
-            for tag, cs in self.constraints.items()
+            for tag, cs in self._constraints.items()
         }
 
         # Build the full schema
@@ -665,6 +664,16 @@ class PathwayOptimizer:
 
 
 def _reproject_point(point: Point, from_crs: str, to_crs: str) -> Point:
+    """Reproject a point from one CRS to another.
+
+    Args:
+        point: The point to reproject.
+        from_crs: Source coordinate reference system.
+        to_crs: Target coordinate reference system.
+
+    Returns:
+        The reprojected point.
+    """
     transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
     x, y = transformer.transform(point.x, point.y)
     return Point(x, y)

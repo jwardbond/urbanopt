@@ -75,9 +75,9 @@ def test_load_restores_constraints(sample_gdf: gpd.GeoDataFrame):
         loaded = PathwayOptimizer.load(path)
 
         # Should restore constraints correctly
-        assert set(loaded.constraints.keys()) == set(optimizer.constraints.keys())
-        for tag in optimizer.constraints:
-            assert len(loaded.constraints[tag]) == len(optimizer.constraints[tag])
+        assert set(loaded._constraints.keys()) == set(optimizer._constraints.keys())
+        for tag in optimizer._constraints:
+            assert len(loaded._constraints[tag]) == len(optimizer._constraints[tag])
 
 
 def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
@@ -108,8 +108,8 @@ def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
 
         # Load and verify constraints work
         loaded = PathwayOptimizer.load(path)
-        assert len(loaded.constraints["le_test"]) == 1
-        assert len(loaded.constraints["ge_test"]) == 1
+        assert len(loaded._constraints["le_test"]) == 1
+        assert len(loaded._constraints["ge_test"]) == 1
 
 
 def test_save_without_build():
