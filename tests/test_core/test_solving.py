@@ -40,15 +40,15 @@ def test_get_selected_pids_before_solve(sample_gdf: gpd.GeoDataFrame):
     assert "Model has not been solved yet" in str(exc_info.value)
 
 
-def test_get_summary_before_solve(sample_gdf: gpd.GeoDataFrame):
-    """Test that get_summary() raises error if called before solving."""
+def test_get_solution_summary_before_solve(sample_gdf: gpd.GeoDataFrame):
+    """Test that get_solution_summary() raises error if called before solving."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
 
     # Should raise error when accessing results before solve
     with pytest.raises(RuntimeError) as exc_info:
-        optimizer.get_summary()
+        optimizer.get_solution_summary()
 
     assert "Model has not been solved yet" in str(exc_info.value)
 
@@ -70,8 +70,8 @@ def test_solve_infeasible_model(sample_gdf: gpd.GeoDataFrame):
     assert "Model is infeasible" in str(exc_info.value)
 
 
-def test_get_summary_contents(sample_gdf: gpd.GeoDataFrame):
-    """Test that get_summary() returns correct information."""
+def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
+    """Test that get_solution_summary() returns correct information."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
@@ -81,7 +81,7 @@ def test_get_summary_contents(sample_gdf: gpd.GeoDataFrame):
 
     # Solve and get summary
     optimizer.solve()
-    summary = optimizer.get_summary()
+    summary = optimizer.get_solution_summary()
 
     # Should contain all required fields
     assert "objective_value" in summary
@@ -111,7 +111,7 @@ def test_solve_with_multiple_constraints(sample_gdf: gpd.GeoDataFrame):
     # Solve and check results
     optimizer.solve()
     selected = optimizer.get_selected_pids()
-    summary = optimizer.get_summary()
+    summary = optimizer.get_solution_summary()
 
     # Should satisfy all constraints
     assert 2.0 <= summary["total_opportunity"] <= 4.0

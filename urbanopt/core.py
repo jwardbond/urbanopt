@@ -249,7 +249,7 @@ class PathwayOptimizer:
             if abs(var.X - 1.0) < 1e-6  # Check if binary variable is 1
         ]
 
-    def get_summary(self) -> dict:
+    def get_solution_summary(self) -> dict:
         """Get a summary of the optimization results.
 
         Returns:
@@ -279,76 +279,25 @@ class PathwayOptimizer:
             "selected_count": len(selected_pids),
         }
 
-    def remove_constraints(self, tag: str) -> None:
-        """Remove all constraints associated with a given tag.
+    def print_solution_summary(self) -> None:
+        """Pretty-print a summary of the optimization results.
 
-        Args:
-            tag: The tag identifying which constraints to remove.
-
-        Raises:
-            ValueError: If the tag does not exist.
-        """
-        if tag not in self._constraints:
-            msg = f"Tag '{tag}' not found in constraints"
-            raise ValueError(msg)
-
-        # Remove constraints from model
-        for constr in self._constraints[tag]:
-            self.model.remove(constr)
-
-        # Remove constraints from tracking dictionary
-        del self._constraints[tag]
-
-        # Update model to reflect changes
-        self.model.update()
-
-    def _add_constraint(
-        self,
-        pids: list[int],
-        coeff_map: dict[int, float],
-        sense: str,  # "<=", ">=", "=="
-        rhs: float,
-        tag: str | None = None,
-    ) -> gp.Constr:
-        """Generic constraint builder.
-
-        Args:
-            pids: List of pathway IDs involved.
-            coeff_map: Dictionary mapping pid to coefficient.
-            sense: One of "<=", ">=", or "==".
-            rhs: Right-hand-side limit.
-            tag: Optional tag for constraint tracking/removal.
-
-        Returns:
-            The created Gurobi constraint object.
+        Prints a formatted summary including:
+        - Objective value
+        - Total opportunity of selected pathways
+        - Solve time in seconds
+        - Number of selected pathways
 
         Raises:
-            ValueError: If sense is not one of "<=", ">=", or "==".
+            RuntimeError: If the model has not been solved yet.
         """
-        expr = gp.quicksum(coeff_map[pid] * self._variables[pid] for pid in pids)
+        summary = self.get_solution_summary()
 
-        if sense == "<=":
-            constr = self.model.addConstr(expr <= rhs)
-        elif sense == ">=":
-            constr = self.model.addConstr(expr >= rhs)
-        elif sense == "==":
-            constr = self.model.addConstr(expr == rhs)
-        else:
-            msg = f"Invalid constraint sense: {sense}"
-            raise ValueError(msg)
-
-        # Store constraint with tag if provided
-        if tag:
-            if tag not in self._constraints:
-                self._constraints[tag] = []
-            self._constraints[tag].append(constr)
-        else:
-            if "untagged" not in self._constraints:
-                self._constraints["untagged"] = []
-            self._constraints["untagged"].append(constr)
-
-        self.model.update()
-        return constr
+        print("✅ Optimization Summary")
+        print(f"  Objective Value   : {summary['objective_value']:.2f}")
+        print(f"  Total Opportunity: {summary['total_opportunity']:.2f}")
+        print(f"  Solve Time        : {summary['solve_time']:.3f} sec")
+        print(f"  Selected Pathways : {summary['selected_count']}")
 
     def add_max_opportunity(
         self,
@@ -379,7 +328,7 @@ class PathwayOptimizer:
             for pid in filtered_pids
         }
 
-        return self._add_constraint(
+        return self._register_constraint(
             pids=filtered_pids,
             coeff_map=coeff_map,
             sense="<=",
@@ -416,7 +365,7 @@ class PathwayOptimizer:
             for pid in filtered_pids
         }
 
-        return self._add_constraint(
+        return self._register_constraint(
             pids=filtered_pids,
             coeff_map=coeff_map,
             sense=">=",
@@ -462,7 +411,7 @@ class PathwayOptimizer:
                 geom2 = self.data[self.data["pid"] == pid2]["geometry"].iloc[0]
                 if geom1.intersects(geom2):
                     coeff_map = {pid1: 1.0, pid2: 1.0}
-                    constr = self._add_constraint(
+                    constr = self._register_constraint(
                         pids=[pid1, pid2],
                         coeff_map=coeff_map,
                         sense="<=",
@@ -505,7 +454,7 @@ class PathwayOptimizer:
 
         coeff_map = dict.fromkeys(filtered_pids, 1.0)
 
-        return self._add_constraint(
+        return self._register_constraint(
             pids=filtered_pids,
             coeff_map=coeff_map,
             sense="<=",
@@ -556,7 +505,7 @@ class PathwayOptimizer:
             for pid in filtered_pids
         }
 
-        return self._add_constraint(
+        return self._register_constraint(
             pids=filtered_pids,
             coeff_map=coeff_map,
             sense="<=",
@@ -564,29 +513,60 @@ class PathwayOptimizer:
             tag=tag,
         )
 
-    def solve(self) -> None:
+    def remove_constraints(self, tag: str) -> None:
+        """Remove all constraints associated with a given tag.
+
+        Args:
+            tag: The tag identifying which constraints to remove.
+
+        Raises:
+            ValueError: If the tag does not exist.
+        """
+        if tag not in self._constraints:
+            msg = f"Tag '{tag}' not found in constraints"
+            raise ValueError(msg)
+
+        # Remove constraints from model
+        for constr in self._constraints[tag]:
+            self.model.remove(constr)
+
+        # Remove constraints from tracking dictionary
+        del self._constraints[tag]
+
+        # Update model to reflect changes
+        self.model.update()
+
+    def solve(self, verbose: bool = False) -> None:
         """Solve the optimization model.
 
         This method optimizes the model with the current objective and constraints.
         After solving, use get_selected_pids() to get the selected pathways or
-        get_summary() for optimization results.
+        get_solution_summary() for optimization results.
+
+        Args:
+            verbose: If True, prints a summary of the solution after solving.
+                    Defaults to False.
 
         Raises:
-            RuntimeError: If the model is infeasible or unbounded.
+            RuntimeError: If the model is infeasible, unbounded, or fails to solve
+                        for any other reason.
         """
         self.model.optimize()
-        self.model.update()  # Ensure model state is current before status check
+        self.model.update()
         status = self.model.Status
 
         if status == gp.GRB.INFEASIBLE:
             msg = "Model is infeasible"
             raise RuntimeError(msg)
-        elif status == gp.GRB.UNBOUNDED:
+        if status == gp.GRB.UNBOUNDED:
             msg = "Model is unbounded"
             raise RuntimeError(msg)
-        elif status != gp.GRB.OPTIMAL:
+        if status != gp.GRB.OPTIMAL:
             msg = f"Optimization failed with status {status}"
             raise RuntimeError(msg)
+
+        if verbose:
+            self.print_solution_summary()
 
     def save(self, path: str | Path) -> None:
         """Save the optimizer state to disk.
@@ -633,6 +613,107 @@ class PathwayOptimizer:
 
         path.with_suffix(".json").write_text(config.model_dump_json(indent=2))
 
+    def debug_model(self, verbose: bool = False, max_vars: int = 20) -> None:
+        """Print debug information about the current state of the model.
+
+        Prints basic model information including number of variables,
+        constraints, and model status.
+
+        Args:
+            verbose: If True, prints additional details about variables
+                    and constraints. Defaults to False.
+            max_vars: Maximum number of variables to print in verbose mode.
+                     Defaults to 20.
+
+        Note:
+            Variable values are only shown if the model has been solved.
+        """
+        print("Gurobi Model Debug Info")
+        print(f"- Variables: {len(self._variables)}")
+        print(f"- Constraints: {sum(len(v) for v in self._constraints.values())}")
+        print(f"- Objective set: {bool(self._objective_weights)}")
+        print(f"- Model status: {self.model.Status}")
+
+        if verbose:
+            print(f"\nVariables (first {max_vars}):")
+            for i, (pid, var) in enumerate(self._variables.items()):
+                if i >= max_vars:
+                    print("  ... (truncated)")
+                    break
+                print(
+                    f"  x_{pid}: {var.X if self.model.SolCount > 0 else 'not solved'}",
+                )
+
+            print("\nConstraint Tags:")
+            for tag, constrs in self._constraints.items():
+                print(f"  [{tag}] {len(constrs)} constraints")
+
+    def export_model(self, path: str) -> None:
+        """Export the current model to a human-readable .lp file for debugging.
+
+        Args:
+            path: Base path for the output file (without extension).
+                 The .lp extension will be added automatically.
+                 Can be either a relative or absolute path.
+
+        Note:
+            The .lp format is a human-readable representation of the
+            optimization model, showing all variables, constraints,
+            and the objective function.
+        """
+        self.model.write(str(Path(path).with_suffix(".lp")))
+        print(f"Model written to: {path}.lp")
+
+    def _register_constraint(
+        self,
+        pids: list[int],
+        coeff_map: dict[int, float],
+        sense: str,  # "<=", ">=", "=="
+        rhs: float,
+        tag: str | None = None,
+    ) -> gp.Constr:
+        """Generic constraint builder.
+
+        Registers a constraint with the gurobi model, and stores a reference to it.
+
+        Args:
+            pids: List of pathway IDs involved.
+            coeff_map: Dictionary mapping pid to coefficient.
+            sense: One of "<=", ">=", or "==".
+            rhs: Right-hand-side limit.
+            tag: Optional tag for constraint tracking/removal.
+
+        Returns:
+            The created Gurobi constraint object.
+
+        Raises:
+            ValueError: If sense is not one of "<=", ">=", or "==".
+        """
+        expr = gp.quicksum(coeff_map[pid] * self._variables[pid] for pid in pids)
+
+        if sense == "<=":
+            constr = self.model.addConstr(expr <= rhs)
+        elif sense == ">=":
+            constr = self.model.addConstr(expr >= rhs)
+        elif sense == "==":
+            constr = self.model.addConstr(expr == rhs)
+        else:
+            msg = f"Invalid constraint sense: {sense}"
+            raise ValueError(msg)
+
+        # Store constraint with tag if provided
+        if tag:
+            if tag not in self._constraints:
+                self._constraints[tag] = []
+            self._constraints[tag].append(constr)
+        else:
+            if "untagged" not in self._constraints:
+                self._constraints["untagged"] = []
+            self._constraints["untagged"].append(constr)
+
+        self.model.update()
+        return constr
+
     def _serialize_constraint(self, constr: gp.Constr) -> ConstraintSchema:
         expr = self.model.getRow(constr)
         pids, coeffs = [], []
@@ -654,7 +735,7 @@ class PathwayOptimizer:
         coeff_map = {
             constr.pids[i]: constr.coeffs[i] for i, _ in enumerate(constr.pids)
         }
-        return self._add_constraint(
+        return self._register_constraint(
             pids=constr.pids,
             coeff_map=coeff_map,
             sense=constr.sense,

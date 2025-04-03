@@ -41,6 +41,9 @@ lint.ignore = [
     "E501",     # Docstring line too long
     "ANN202",   # Return type for private function
     "UP035",    # Callable from collections.abc
+    "T201",     # Print statements
+    "FBT001",   # Boolean arguments
+    "FBT002",   # Boolean arguments
     ]
 
 

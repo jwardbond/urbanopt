@@ -263,13 +263,13 @@ def test_mutual_exclusion_multiple_pairs(mutual_exclusion_gdf: gpd.GeoDataFrame)
     assert used_indices == expected_indices
 
 
-def test_add_constraint_senses(sample_gdf: gpd.GeoDataFrame):
-    """Test that _add_constraint handles all constraint types correctly."""
+def test_register_constraint_senses(sample_gdf: gpd.GeoDataFrame):
+    """Test that _register_constraint handles all constraint types correctly."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
     # Should create less-than constraint
-    const_le = optimizer._add_constraint(
+    const_le = optimizer._register_constraint(
         pids=optimizer.pids,
         coeff_map=dict.fromkeys(optimizer.pids, 1.0),
         sense="<=",
@@ -279,7 +279,7 @@ def test_add_constraint_senses(sample_gdf: gpd.GeoDataFrame):
     assert const_le.Sense == "<"
 
     # Should create greater-than constraint
-    const_ge = optimizer._add_constraint(
+    const_ge = optimizer._register_constraint(
         pids=optimizer.pids,
         coeff_map=dict.fromkeys(optimizer.pids, 1.0),
         sense=">=",
@@ -289,7 +289,7 @@ def test_add_constraint_senses(sample_gdf: gpd.GeoDataFrame):
     assert const_ge.Sense == ">"
 
     # Should create equality constraint
-    const_eq = optimizer._add_constraint(
+    const_eq = optimizer._register_constraint(
         pids=optimizer.pids,
         coeff_map=dict.fromkeys(optimizer.pids, 1.0),
         sense="==",
@@ -300,7 +300,7 @@ def test_add_constraint_senses(sample_gdf: gpd.GeoDataFrame):
 
     # Should reject invalid constraint sense
     with pytest.raises(ValueError, match="Invalid constraint sense"):
-        optimizer._add_constraint(
+        optimizer._register_constraint(
             pids=optimizer.pids,
             coeff_map=dict.fromkeys(optimizer.pids, 1.0),
             sense="invalid",
