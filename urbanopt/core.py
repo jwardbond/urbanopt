@@ -206,7 +206,10 @@ class PathwayOptimizer:
         # Validate weights
         invalid_weights = [col for col in weights if col not in self.cost_columns]
         if invalid_weights:
-            msg = f"Invalid cost columns in weights: {invalid_weights}"
+            msg = (
+                f"Invalid cost columns in weights: {invalid_weights}\n"
+                f"Available cost columns: {self.cost_columns}"
+            )
             raise ValueError(msg)
 
         # Store weights internally
