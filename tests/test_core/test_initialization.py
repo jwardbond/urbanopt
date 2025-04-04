@@ -21,6 +21,7 @@ def test_non_integer_pids():
     """Test that initialization fails when PIDs are not integers."""
     data = {
         "pid": ["1", "2", "3"],  # String PIDs
+        "label": ["adu", "bment", "vsplit"],
         "start": ["A", "B", "C"],
         "end": ["X", "Y", "Z"],
         "desc": ["desc1", "desc2", "desc3"],
@@ -40,6 +41,7 @@ def test_float_pids():
     """Test that initialization fails when PIDs are floats."""
     data = {
         "pid": [1.0, 2.0, 3.0],  # Float PIDs
+        "label": ["adu", "bment", "vsplit"],
         "start": ["A", "B", "C"],
         "end": ["X", "Y", "Z"],
         "desc": ["desc1", "desc2", "desc3"],

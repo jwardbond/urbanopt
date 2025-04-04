@@ -190,9 +190,10 @@ def test_mutual_exclusion_basic_intersection(mutual_exclusion_gdf: gpd.GeoDataFr
     optimizer = PathwayOptimizer(mutual_exclusion_gdf)
     optimizer.build_variables()
 
-    # Test basic intersection case between A→X and B→Y pathways
+    # Test basic intersection case between adu and bment pathways
     constraints = optimizer.add_mutual_exclusion(
-        (("A", "X"), ("B", "Y")),  # Single pair of intersecting pathway types
+        label1="adu",
+        label2="bment",
         tag="basic",
     )
 
@@ -218,9 +219,10 @@ def test_mutual_exclusion_no_intersections(mutual_exclusion_gdf: gpd.GeoDataFram
     optimizer = PathwayOptimizer(mutual_exclusion_gdf)
     optimizer.build_variables()
 
-    # Test between D→W and E→V pathways which don't intersect
+    # Test between hsplit and merge pathways which don't intersect
     constraints = optimizer.add_mutual_exclusion(
-        (("D", "W"), ("E", "V")),  # Single pair of non-intersecting pathway types
+        label1="hsplit",
+        label2="merge",
         tag="no_intersect",
     )
 
@@ -229,29 +231,23 @@ def test_mutual_exclusion_no_intersections(mutual_exclusion_gdf: gpd.GeoDataFram
     assert "no_intersect" not in optimizer._constraints
 
 
-def test_mutual_exclusion_multiple_pairs(mutual_exclusion_gdf: gpd.GeoDataFrame):
-    """Test that mutual exclusion works with multiple pairs by calling method multiple times."""
+def test_mutual_exclusion_single_label(mutual_exclusion_gdf: gpd.GeoDataFrame):
+    """Test that mutual exclusion works with a single label."""
     optimizer = PathwayOptimizer(mutual_exclusion_gdf)
     optimizer.build_variables()
 
-    # Test multiple pairs with various intersection patterns
-    pairs = [
-        (("A", "X"), ("B", "Y")),  # Should create 1 constraint (pid 1 ↔ pid 3)
-        (("B", "Y"), ("C", "Z")),  # Should create 0 constraints (no intersections)
-        (("A", "X"), ("D", "W")),  # Should create 0 constraints (no intersections)
-    ]
+    # Test exclusion for adu pathways
+    constraints = optimizer.add_mutual_exclusion(
+        label1="adu",
+        tag="exclusion",
+    )
 
-    all_constraints = []
-    for pair in pairs:
-        constraints = optimizer.add_mutual_exclusion(pair, tag="multi")
-        all_constraints.extend(constraints)
-
-    # Should create correct number of constraints (only one pair intersects)
-    assert len(all_constraints) == 1
-    assert len(optimizer._constraints["multi"]) == 1
+    # Should create one constraint for the intersecting bment pathway
+    assert len(constraints) == 1
+    assert len(optimizer._constraints["exclusion"]) == 1
 
     # Should have correct constraint structure
-    constr = all_constraints[0]
+    constr = constraints[0]
     expr = optimizer.model.getRow(constr)
     assert expr.size() == 2
     assert constr.RHS == 1.0

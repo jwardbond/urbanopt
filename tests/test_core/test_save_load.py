@@ -117,6 +117,7 @@ def test_save_without_build():
     data = gpd.GeoDataFrame(
         {
             "pid": [1],
+            "label": ["adu"],
             "start": ["A"],
             "end": ["X"],
             "desc": ["test"],
@@ -147,6 +148,7 @@ def test_load_missing_files():
         data = gpd.GeoDataFrame(
             {
                 "pid": [1],
+                "label": ["adu"],
                 "start": ["A"],
                 "end": ["X"],
                 "desc": ["test"],

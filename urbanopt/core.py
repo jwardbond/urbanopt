@@ -76,6 +76,7 @@ class PathwayOptimizer:
         Args:
             gdf: GeoDataFrame containing pathway data with required columns:
                 - pid: Pathway identifier (integer)
+                - label: Pathway type label (e.g., "adu")
                 - start: Start point/area
                 - end: End point/area
                 - desc: Description
@@ -88,7 +89,15 @@ class PathwayOptimizer:
                        or if any pid values are not integers.
         """
         # Validate required columns
-        required_columns = ["pid", "start", "end", "desc", "opportunity", "geometry"]
+        required_columns = [
+            "pid",
+            "label",
+            "start",
+            "end",
+            "desc",
+            "opportunity",
+            "geometry",
+        ]
         missing_columns = [col for col in required_columns if col not in gdf.columns]
         if missing_columns:
             msg = f"Missing required columns: {missing_columns}"
@@ -378,50 +387,75 @@ class PathwayOptimizer:
 
     def add_mutual_exclusion(
         self,
-        exclusion_pair: tuple[tuple[str, str], tuple[str, str]],
+        label1: str,
+        label2: str | None = None,
         tag: str | None = None,
     ) -> list[gp.Constr]:
-        """Add mutual exclusion constraints between a pair of pathway types based on start/end types.
+        """Add mutual exclusion constraints between pathways based on their labels.
 
-        For the given pair of pathway types specified by their start/end points, this method:
-        1. Finds all pathways matching each type specification
-        2. For each pair of intersecting pathways between the groups, adds a constraint
-           ensuring at most one can be selected.
+        For the given pathway label(s), this method:
+        1. Finds all pathways matching label1
+        2. If label2 is provided, creates constraints ensuring no pathway with label1
+           can be selected with an intersecting pathway with label2.
+        3. If label2 is not provided, creates constraints ensuring no pathway with label1
+           can be selected with ANY intersecting pathway (regardless of label).
+
+        Uses GeoPandas spatial join for efficient intersection detection.
 
         Args:
-            exclusion_pair: A tuple containing two (start, end) tuples specifying which pathway
-                         types should be mutually exclusive.
-                         Example: (("A", "X"), ("B", "Y")) means pathways from A to X
-                         cannot be selected together with pathways from B to Y if they intersect.
+            label1: First pathway label to find mutual exclusions for.
+            label2 (Optional, None): Pathways with which label1 cannot co-occur. Defaults to None (all pathways)
             tag: Optional tag for constraint tracking/removal.
 
         Returns:
-            List of created Gurobi constraint objects.
+            List of Gurobi constraint objects.
         """
         constraints = []
-        (start1, end1), (start2, end2) = exclusion_pair
 
-        # Find pathways matching each type specification
-        mask1 = (self.data["start"] == start1) & (self.data["end"] == end1)
-        mask2 = (self.data["start"] == start2) & (self.data["end"] == end2)
-        pids1 = self.data[mask1]["pid"].tolist()
-        pids2 = self.data[mask2]["pid"].tolist()
+        label1_paths = self.data[self.data["label"] == label1].copy()
+        if label1_paths.empty:
+            return constraints
 
-        # For each pair of pathways between the groups
-        for pid1 in pids1:
-            geom1 = self.data[self.data["pid"] == pid1]["geometry"].iloc[0]
-            for pid2 in pids2:
-                geom2 = self.data[self.data["pid"] == pid2]["geometry"].iloc[0]
-                if geom1.intersects(geom2):
-                    coeff_map = {pid1: 1.0, pid2: 1.0}
-                    constr = self._register_constraint(
-                        pids=[pid1, pid2],
-                        coeff_map=coeff_map,
-                        sense="<=",
-                        rhs=1.0,
-                        tag=tag,
-                    )
-                    constraints.append(constr)
+        if label2 is None:
+            other_paths = self.data[self.data["label"] != label1].copy()
+        else:
+            other_paths = self.data[self.data["label"] == label2].copy()
+
+        if other_paths.empty:
+            return constraints
+
+        # Perform spatial join: find intersecting geometry pairs
+        joined = gpd.sjoin(
+            other_paths,
+            label1_paths,
+            how="inner",
+            predicate="intersects",
+            lsuffix="other",
+            rsuffix="label1",
+        )
+
+        # Drop duplicates if bidirectional overlaps might cause repeats
+        seen_pairs = set()
+
+        for _, row in joined.iterrows():
+            pid1 = row["pid_label1"]
+            pid2 = row["pid_other"]
+
+            # Avoid adding the same constraint twice
+            key = tuple(sorted((pid1, pid2)))
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
+
+            coeff_map = {pid1: 1.0, pid2: 1.0}
+            constr = self._register_constraint(
+                pids=[pid1, pid2],
+                coeff_map=coeff_map,
+                sense="<=",
+                rhs=1.0,
+                tag=tag,
+            )
+            constraints.append(constr)
 
         return constraints
 
