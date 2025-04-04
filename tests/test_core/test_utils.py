@@ -26,7 +26,7 @@ def test_print_solution_summary_after_solve(sample_gdf: gpd.GeoDataFrame, capsys
     assert "Selected Pathways" in captured.out
 
 
-def test_print_solution_summary_before_solve(sample_gdf: gpd.GeoDataFrame):
+def test_print_solution_summary_requires_solve(sample_gdf: gpd.GeoDataFrame):
     """Test that print_solution_summary raises error if called before solving."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()

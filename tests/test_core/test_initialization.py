@@ -17,7 +17,7 @@ def test_optimizer_initialization(sample_gdf: gpd.GeoDataFrame):
     assert optimizer.pids == [1, 2, 3]
 
 
-def test_non_integer_pids():
+def test_init_rejects_non_integer_pids():
     """Test that initialization fails when PIDs are not integers."""
     data = {
         "pid": ["1", "2", "3"],  # String PIDs
@@ -37,7 +37,7 @@ def test_non_integer_pids():
     assert "All PIDs must be integers" in str(exc_info.value)
 
 
-def test_float_pids():
+def test_init_rejects_float_pids():
     """Test that initialization fails when PIDs are floats."""
     data = {
         "pid": [1.0, 2.0, 3.0],  # Float PIDs

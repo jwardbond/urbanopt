@@ -7,7 +7,7 @@ from urbanopt import PathwayOptimizer
 from urbanopt.core import _reproject_point
 
 
-def test_add_max_opportunity_global(sample_gdf: gpd.GeoDataFrame):
+def test_add_max_opportunity_includes_all_pathways(sample_gdf: gpd.GeoDataFrame):
     """Test that global max opportunity constraint includes all pathways."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -29,7 +29,7 @@ def test_add_max_opportunity_global(sample_gdf: gpd.GeoDataFrame):
     assert used_indices == expected_indices
 
 
-def test_add_max_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
+def test_add_max_opportunity_filters_by_polygon(sample_gdf: gpd.GeoDataFrame):
     """Test that max opportunity constraint correctly filters by polygon boundary."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -52,7 +52,7 @@ def test_add_max_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
     assert used_indices == expected_indices
 
 
-def test_add_max_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame):
+def test_add_max_opportunity_filters_by_multipolygon(sample_gdf: gpd.GeoDataFrame):
     """Test that max opportunity constraint correctly filters by multipolygon boundary."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -80,7 +80,7 @@ def test_add_max_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame)
     assert used_indices == expected_indices
 
 
-def test_add_max_opportunity_with_tag(sample_gdf: gpd.GeoDataFrame):
+def test_add_max_opportunity_handles_tags(sample_gdf: gpd.GeoDataFrame):
     """Test that max opportunity constraints are correctly tagged."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -94,7 +94,7 @@ def test_add_max_opportunity_with_tag(sample_gdf: gpd.GeoDataFrame):
     assert optimizer._constraints["test_tag"] == [c1, c2]
 
 
-def test_add_min_opportunity_global(sample_gdf: gpd.GeoDataFrame):
+def test_add_min_opportunity_includes_all_pathways(sample_gdf: gpd.GeoDataFrame):
     """Test that add_min_opportunity creates a global constraint including all pids."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -117,7 +117,7 @@ def test_add_min_opportunity_global(sample_gdf: gpd.GeoDataFrame):
     assert used_indices == expected_indices
 
 
-def test_add_min_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
+def test_add_min_opportunity_filters_by_polygon(sample_gdf: gpd.GeoDataFrame):
     """Test that min opportunity constraint correctly filters by polygon boundary."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -140,7 +140,7 @@ def test_add_min_opportunity_polygon_boundary(sample_gdf: gpd.GeoDataFrame):
     assert used_indices == expected_indices
 
 
-def test_add_min_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame):
+def test_add_min_opportunity_filters_by_multipolygon(sample_gdf: gpd.GeoDataFrame):
     """Test that min opportunity constraint correctly filters by multipolygon boundary."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -168,7 +168,7 @@ def test_add_min_opportunity_multipolygon_boundary(sample_gdf: gpd.GeoDataFrame)
     assert used_indices == expected_indices
 
 
-def test_add_min_opportunity_with_tag(sample_gdf: gpd.GeoDataFrame):
+def test_add_min_opportunity_handles_tags(sample_gdf: gpd.GeoDataFrame):
     """Test that min opportunity constraints handle tags correctly."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -185,7 +185,9 @@ def test_add_min_opportunity_with_tag(sample_gdf: gpd.GeoDataFrame):
     assert optimizer._constraints["untagged"][0] == c2
 
 
-def test_mutual_exclusion_basic_intersection(mutual_exclusion_gdf: gpd.GeoDataFrame):
+def test_add_mutual_exclusion_creates_constraints(
+    mutual_exclusion_gdf: gpd.GeoDataFrame,
+):
     """Test that mutual exclusion constraints are created for intersecting pathways."""
     optimizer = PathwayOptimizer(mutual_exclusion_gdf)
     optimizer.build_variables()
@@ -214,7 +216,9 @@ def test_mutual_exclusion_basic_intersection(mutual_exclusion_gdf: gpd.GeoDataFr
     assert used_indices == expected_indices
 
 
-def test_mutual_exclusion_no_intersections(mutual_exclusion_gdf: gpd.GeoDataFrame):
+def test_add_mutual_exclusion_handles_no_intersections(
+    mutual_exclusion_gdf: gpd.GeoDataFrame,
+):
     """Test that no constraints are created when pathways don't intersect."""
     optimizer = PathwayOptimizer(mutual_exclusion_gdf)
     optimizer.build_variables()
@@ -231,7 +235,9 @@ def test_mutual_exclusion_no_intersections(mutual_exclusion_gdf: gpd.GeoDataFram
     assert "no_intersect" not in optimizer._constraints
 
 
-def test_mutual_exclusion_single_label(mutual_exclusion_gdf: gpd.GeoDataFrame):
+def test_add_mutual_exclusion_handles_single_label(
+    mutual_exclusion_gdf: gpd.GeoDataFrame,
+):
     """Test that mutual exclusion works with a single label."""
     optimizer = PathwayOptimizer(mutual_exclusion_gdf)
     optimizer.build_variables()
@@ -304,7 +310,7 @@ def test_register_constraint_senses(sample_gdf: gpd.GeoDataFrame):
         )
 
 
-def test_mixed_constraint_tags(sample_gdf: gpd.GeoDataFrame):
+def test_constraint_handles_mixed_tags(sample_gdf: gpd.GeoDataFrame):
     """Test that different constraint types can be mixed under tags."""
     # Setup
     optimizer = PathwayOptimizer(sample_gdf)
@@ -323,7 +329,9 @@ def test_mixed_constraint_tags(sample_gdf: gpd.GeoDataFrame):
     assert optimizer._constraints["untagged"] == [c3]
 
 
-def test_max_opportunity_near_point(sample_gdf: gpd.GeoDataFrame):
+def test_add_max_opportunity_near_point_filters_by_distance(
+    sample_gdf: gpd.GeoDataFrame,
+):
     """Test that max opportunity near point constraint correctly filters by distance."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -359,7 +367,7 @@ def test_max_opportunity_near_point(sample_gdf: gpd.GeoDataFrame):
     assert used_indices == expected_indices
 
 
-def test_max_opportunity_near_point_crs_validation(sample_gdf: gpd.GeoDataFrame):
+def test_add_max_opportunity_near_point_validates_crs(sample_gdf: gpd.GeoDataFrame):
     """Test that max opportunity near point constraint validates CRS."""
     # Set geographic CRS
     sample_gdf = sample_gdf.set_crs("EPSG:4326")
@@ -382,7 +390,7 @@ def test_max_opportunity_near_point_crs_validation(sample_gdf: gpd.GeoDataFrame)
     assert isinstance(constraint, gp.Constr)
 
 
-def test_remove_constraints_by_tag(sample_gdf: gpd.GeoDataFrame):
+def test_remove_constraints_removes_by_tag(sample_gdf: gpd.GeoDataFrame):
     """Test that constraints can be removed by tag."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()

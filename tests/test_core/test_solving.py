@@ -27,7 +27,7 @@ def test_solve_basic_optimization(sample_gdf: gpd.GeoDataFrame):
     assert optimizer.model.Status == gp.GRB.OPTIMAL
 
 
-def test_get_selected_pids_before_solve(sample_gdf: gpd.GeoDataFrame):
+def test_get_selected_pids_requires_solve(sample_gdf: gpd.GeoDataFrame):
     """Test that get_selected_pids() raises error if called before solving."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -40,7 +40,7 @@ def test_get_selected_pids_before_solve(sample_gdf: gpd.GeoDataFrame):
     assert "Model has not been solved yet" in str(exc_info.value)
 
 
-def test_get_solution_summary_before_solve(sample_gdf: gpd.GeoDataFrame):
+def test_get_solution_summary_requires_solve(sample_gdf: gpd.GeoDataFrame):
     """Test that get_solution_summary() raises error if called before solving."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -96,7 +96,7 @@ def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
     assert summary["total_opportunity"] >= 2.0  # Due to min_opportunity constraint
 
 
-def test_solve_with_multiple_constraints(sample_gdf: gpd.GeoDataFrame):
+def test_solve_handles_multiple_constraints(sample_gdf: gpd.GeoDataFrame):
     """Test solving with multiple interacting constraints."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()

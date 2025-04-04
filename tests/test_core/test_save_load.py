@@ -112,7 +112,7 @@ def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
         assert len(loaded._constraints["ge_test"]) == 1
 
 
-def test_save_without_build():
+def test_save_rejects_unbuilt_model():
     """Test that saving without building variables raises error."""
     data = gpd.GeoDataFrame(
         {
@@ -135,7 +135,7 @@ def test_save_without_build():
             optimizer.save(path)
 
 
-def test_load_missing_files():
+def test_load_handles_missing_files():
     """Test that loading with missing files raises appropriate errors."""
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "nonexistent"
