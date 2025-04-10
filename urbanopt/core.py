@@ -1,11 +1,14 @@
 import json
+import time
 from pathlib import Path
 from typing import Literal
 
 import geopandas as gpd
 import gurobipy as gp
+import numpy as np
 from pydantic import BaseModel
 from pyproj import Transformer
+from scipy.sparse import coo_matrix, csr_matrix
 from shapely.geometry import MultiPolygon, Point, Polygon
 
 
@@ -125,6 +128,7 @@ class PathwayOptimizer:
 
         # Initialize index mapping dictionaries
         self._index_to_pid = {}
+        self._pid_to_index = {}
 
         # Initialize objective function
         self._objective_weights = {}
@@ -198,6 +202,7 @@ class PathwayOptimizer:
         # Build index mapping dictionaries
         for pid, var in self._variables.items():
             self._index_to_pid[var.index] = pid
+            self._pid_to_index[pid] = var.index
 
         # Update the model to include the new variables
         self.model.update()
@@ -235,10 +240,14 @@ class PathwayOptimizer:
             pid: sum(weights[col] * cost_matrix[pid][col] for col in weights)
             for pid in self.pids
         }
-        objective = gp.quicksum(weighted_cost[pid] for pid in self.pids)
+        objective = gp.quicksum(
+            weighted_cost[pid] * self._variables[pid] for pid in self.pids
+        )
 
         # Set as minimization objective
         self.model.setObjective(objective, gp.GRB.MINIMIZE)
+
+        self.model.update()
 
     def get_selected_pids(self) -> list[int]:
         """Get the list of selected pathway IDs from the solved model.
@@ -335,10 +344,10 @@ class PathwayOptimizer:
         else:
             filtered_pids = self.pids
 
-        coeff_map = {
-            pid: self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
-            for pid in filtered_pids
-        }
+        # Set index to make lookup faster
+        coeff_map = (
+            self.data.set_index("pid").loc[filtered_pids, "opportunity"].to_dict()
+        )
 
         return self._register_constraint(
             pids=filtered_pids,
@@ -372,10 +381,10 @@ class PathwayOptimizer:
         else:
             filtered_pids = self.pids
 
-        coeff_map = {
-            pid: self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
-            for pid in filtered_pids
-        }
+        # Set index to make lookup faster
+        coeff_map = (
+            self.data.set_index("pid").loc[filtered_pids, "opportunity"].to_dict()
+        )
 
         return self._register_constraint(
             pids=filtered_pids,
@@ -425,6 +434,7 @@ class PathwayOptimizer:
             return constraints
 
         # Perform spatial join: find intersecting geometry pairs
+        join_start = time.time()
         joined = gpd.sjoin(
             other_paths,
             label1_paths,
@@ -433,31 +443,108 @@ class PathwayOptimizer:
             lsuffix="other",
             rsuffix="label1",
         )
+        print("join_time:", time.time() - join_start)
+        print("length:", len(joined))
 
-        # Drop duplicates if bidirectional overlaps might cause repeats
+        # Construct variables
+        constr_start = time.time()
+        pids = list(set(joined["pid_label1"]) | set(joined["pid_other"]))
+        if not pids:  # No intersecting pathways found
+            return None
+
+        index_map = {pid: i for i, pid in enumerate(pids)}
+
+        # Construct coefficient matrix
         seen_pairs = set()
+        rhs_list = []
+        rows = []
+        cols = []
+        data = []
 
         for _, row in joined.iterrows():
             pid1 = row["pid_label1"]
             pid2 = row["pid_other"]
 
-            # Avoid adding the same constraint twice
             key = tuple(sorted((pid1, pid2)))
             if key in seen_pairs:
                 continue
             seen_pairs.add(key)
 
-            coeff_map = {pid1: 1.0, pid2: 1.0}
-            constr = self._register_constraint(
-                pids=[pid1, pid2],
-                coeff_map=coeff_map,
-                sense="<=",
-                rhs=1.0,
-                tag=tag,
-            )
-            constraints.append(constr)
+            # Add coefficients for this constraint
+            rows.extend([len(rhs_list), len(rhs_list)])
+            cols.extend([index_map[pid1], index_map[pid2]])
+            data.extend([1.0, 1.0])  # Coefficients are 1.0 for both variables
+            rhs_list.append(1.0)
 
-        return constraints
+        # Create sparse matrix
+        coeffs = coo_matrix(
+            (data, (rows, cols)),
+            shape=(len(rhs_list), len(pids)),
+        ).tocsr()
+
+        # Construct the rhs
+        rhs = np.array(rhs_list)
+
+        print("constr_time:", time.time() - constr_start)
+
+        return self._register_matrix_constraint(
+            pids=pids,
+            coeffs=coeffs,
+            rhs=rhs,
+            sense="<=",
+            tag=tag,
+        )
+
+    def _register_matrix_constraint(
+        self,
+        pids: list[int],
+        coeffs: csr_matrix,
+        sense: str,  # "<=", ">=", "=="
+        rhs: np.ndarray,
+        tag: str | None = None,
+        defer_update: bool = False,
+    ) -> list[gp.Constr]:
+        """Register multiple constraints at once using matrix form.
+
+        This is a more efficient way to add many constraints at once compared to
+        adding them one by one. It uses Gurobi's matrix constraint API.
+
+        Args:
+            pids: List of pathway IDs involved in the constraints.
+            coeffs: Sparse coefficient matrix where each row represents one constraint
+                   and each column corresponds to a pathway variable.
+            sense: One of "<=", ">=", or "==". The sense for all constraints.
+            rhs: Right-hand-side values, one per constraint (row in coeffs).
+            tag: Optional tag for constraint tracking/removal.
+            defer_update: If False, calls model.update() before exiting. Defaults to False.
+
+        Returns:
+            List of created Gurobi constraint objects.
+
+        Raises:
+            ValueError: If sense is not one of "<=", ">=", or "==".
+        """
+        sense_map = {
+            "<=": "<",
+            ">=": ">",
+            "==": "=",
+        }
+        if sense not in sense_map:
+            msg = f"Invalid constraint sense: {sense}"
+            raise ValueError(msg)
+        else:
+            sense = sense_map[sense]
+
+        x = [self._variables[pid] for pid in pids]
+
+        constrs = self.model.addMConstr(coeffs, x, sense, rhs)
+
+        self._constraints.setdefault(tag or "untagged", []).append(constrs)
+
+        if not defer_update:
+            self.model.update()
+
+        return constrs
 
     def add_pathway_limit(
         self,
@@ -672,6 +759,11 @@ class PathwayOptimizer:
         print(f"- Model status: {self.model.Status}")
 
         if verbose:
+            if self._objective_weights:
+                print("\nObjective Weights:")
+                for col, weight in self._objective_weights.items():
+                    print(f"  {col}: {weight}")
+
             print(f"\nVariables (first {max_vars}):")
             for i, (pid, var) in enumerate(self._variables.items()):
                 if i >= max_vars:
@@ -708,6 +800,7 @@ class PathwayOptimizer:
         sense: str,  # "<=", ">=", "=="
         rhs: float,
         tag: str | None = None,
+        defer_update: bool = False,
     ) -> gp.Constr:
         """Generic constraint builder.
 
@@ -719,6 +812,7 @@ class PathwayOptimizer:
             sense: One of "<=", ">=", or "==".
             rhs: Right-hand-side limit.
             tag: Optional tag for constraint tracking/removal.
+            defer_update: If False, calls model.update() before exiting. Defaults to False.
 
         Returns:
             The created Gurobi constraint object.
@@ -726,7 +820,8 @@ class PathwayOptimizer:
         Raises:
             ValueError: If sense is not one of "<=", ">=", or "==".
         """
-        expr = gp.quicksum(coeff_map[pid] * self._variables[pid] for pid in pids)
+        terms = [coeff_map[pid] * self._variables[pid] for pid in pids]
+        expr = gp.quicksum(terms)
 
         if sense == "<=":
             constr = self.model.addConstr(expr <= rhs)
@@ -739,16 +834,11 @@ class PathwayOptimizer:
             raise ValueError(msg)
 
         # Store constraint with tag if provided
-        if tag:
-            if tag not in self._constraints:
-                self._constraints[tag] = []
-            self._constraints[tag].append(constr)
-        else:
-            if "untagged" not in self._constraints:
-                self._constraints["untagged"] = []
-            self._constraints["untagged"].append(constr)
+        self._constraints.setdefault(tag or "untagged", []).append(constr)
 
-        self.model.update()
+        if not defer_update:
+            self.model.update()
+
         return constr
 
     def _serialize_constraint(self, constr: gp.Constr) -> ConstraintSchema:

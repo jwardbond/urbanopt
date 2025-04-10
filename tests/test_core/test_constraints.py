@@ -1,7 +1,9 @@
 import geopandas as gpd
 import gurobipy as gp
+import numpy as np
 import pytest
-from shapely.geometry import MultiPolygon, Polygon, Point
+from scipy.sparse import csr_matrix
+from shapely.geometry import MultiPolygon, Point, Polygon
 
 from urbanopt import PathwayOptimizer
 from urbanopt.core import _reproject_point
@@ -16,10 +18,14 @@ def test_add_max_opportunity_includes_all_pathways(sample_gdf: gpd.GeoDataFrame)
     constraint = optimizer.add_max_opportunity(limit)
     optimizer.model.update()
 
+    # Should return a gurobi constraint
+    assert isinstance(constraint, gp.Constr)
+
     # Should create one constraint in untagged group
     assert "untagged" in optimizer._constraints
     assert len(optimizer._constraints["untagged"]) == 1
-    assert isinstance(constraint, gp.Constr)
+
+    # Constraint should have the correct RHS
     assert limit == constraint.RHS
 
     # Should include all pathway variables
@@ -193,18 +199,19 @@ def test_add_mutual_exclusion_creates_constraints(
     optimizer.build_variables()
 
     # Test basic intersection case between adu and bment pathways
-    constraints = optimizer.add_mutual_exclusion(
+    mconstr = optimizer.add_mutual_exclusion(
         label1="adu",
         label2="bment",
         tag="basic",
     )
 
     # Should create one constraint for the intersecting pair
-    assert len(constraints) == 1
-    assert len(optimizer._constraints["basic"]) == 1
+    assert isinstance(mconstr, gp.MConstr)
+    assert mconstr.shape == (1,)  # One constraint
+    assert optimizer._constraints["basic"][0] is mconstr
 
     # Should have correct constraint structure
-    constr = constraints[0]
+    constr = mconstr[0]  # Get first constraint from matrix
     expr = optimizer.model.getRow(constr)
     assert expr.size() == 2
     assert constr.RHS == 1.0
@@ -224,14 +231,14 @@ def test_add_mutual_exclusion_handles_no_intersections(
     optimizer.build_variables()
 
     # Test between hsplit and merge pathways which don't intersect
-    constraints = optimizer.add_mutual_exclusion(
+    mconstr = optimizer.add_mutual_exclusion(
         label1="hsplit",
         label2="merge",
         tag="no_intersect",
     )
 
     # Should not create any constraints
-    assert len(constraints) == 0
+    assert mconstr is None
     assert "no_intersect" not in optimizer._constraints
 
 
@@ -243,17 +250,18 @@ def test_add_mutual_exclusion_handles_single_label(
     optimizer.build_variables()
 
     # Test exclusion for adu pathways
-    constraints = optimizer.add_mutual_exclusion(
+    mconstr = optimizer.add_mutual_exclusion(
         label1="adu",
         tag="exclusion",
     )
 
     # Should create one constraint for the intersecting bment pathway
-    assert len(constraints) == 1
-    assert len(optimizer._constraints["exclusion"]) == 1
+    assert isinstance(mconstr, gp.MConstr)
+    assert mconstr.shape == (1,)  # One constraint
+    assert optimizer._constraints["exclusion"][0] is mconstr
 
     # Should have correct constraint structure
-    constr = constraints[0]
+    constr = mconstr[0]  # Get first constraint from matrix
     expr = optimizer.model.getRow(constr)
     assert expr.size() == 2
     assert constr.RHS == 1.0
@@ -424,3 +432,75 @@ def test_remove_constraints_invalid_tag(sample_gdf: gpd.GeoDataFrame):
         optimizer.remove_constraints("invalid_tag")
 
     assert "Tag 'invalid_tag' not found in constraints" in str(exc_info.value)
+
+
+def test_register_matrix_constraint(sample_gdf: gpd.GeoDataFrame):
+    """Test that matrix constraints are correctly registered with less-than sense."""
+
+
+def test_register_matrix_constraint_less_than(sample_gdf: gpd.GeoDataFrame):
+    """Test that matrix constraints are correctly registered with less-than sense."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    pids = [1, 2]
+    coeffs = csr_matrix([[1.0, 1.0], [2.0, 3.0]])
+    rhs = np.array([1.0, 5.0])
+
+    # x1 + x2 <= 1.0
+    # 2x1 + 3x2 <= 5.0
+
+    mconstr = optimizer._register_matrix_constraint(
+        pids=pids,
+        coeffs=coeffs,
+        sense="<=",
+        rhs=rhs,
+        tag="test_matrix",
+    )
+
+    # Should store matrix constraint under tag
+    assert "test_matrix" in optimizer._constraints
+    assert optimizer._constraints["test_matrix"][0] is mconstr
+
+    # Should be a matrix constraint object with correct size
+    assert isinstance(mconstr, gp.MConstr)
+    assert mconstr.shape == (2,)
+
+    # Should have correct constraint properties
+    for i in range(mconstr.shape[0]):
+        constr = mconstr[i]
+        expr = optimizer.model.getRow(constr)
+        actual_coeffs = {
+            expr.getVar(j).index: expr.getCoeff(j) for j in range(expr.size())
+        }
+
+        assert constr.Sense == "<"
+        assert constr.RHS == rhs[i]  # noqa: SIM300
+
+        # Each variable should have the correct coefficient
+        for j, pid in enumerate(pids):
+            var_index = optimizer._pid_to_index[pid]
+            assert var_index in actual_coeffs
+            assert abs(actual_coeffs[var_index] - coeffs[i, j]) < 1e-6
+
+
+def test_register_matrix_constraint_invalid_sense(sample_gdf: gpd.GeoDataFrame):
+    """Test that matrix constraint registration rejects invalid sense."""
+    import numpy as np
+    from scipy.sparse import csr_matrix
+
+    # Setup
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+    pids = [1, 2]
+    coeffs = csr_matrix([[1.0, 1.0], [2.0, 3.0]])
+    rhs = np.array([1.0, 5.0])
+
+    # Should reject invalid sense
+    with pytest.raises(ValueError, match="Invalid constraint sense"):
+        optimizer._register_matrix_constraint(
+            pids=pids,
+            coeffs=coeffs,
+            sense="invalid",
+            rhs=rhs,
+            tag="test_matrix",
+        )
