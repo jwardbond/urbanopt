@@ -1,5 +1,6 @@
 # Obsolete files
 .archive/
+data/
 
 # LLM files
 .cursor/
