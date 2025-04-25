@@ -127,19 +127,20 @@ def test_add_opportunity_constraints_handles_tags(sample_gdf: gpd.GeoDataFrame):
         limit2, sense="<=", boundaries=boundary, tag="test_tag"
     )
 
-    optimizer.model.update()
-
     # Should store both matrix constraints under the same tag
     assert "test_tag" in optimizer._constraints
-    assert len(optimizer._constraints["test_tag"]) == 2
 
-    # Check that c1 and c2 are stored properly
-    assert optimizer._constraints["test_tag"][0] is c1
-    assert optimizer._constraints["test_tag"][1] is c2
-
-    # Should be MConstrs
+    # Should return MConstr, but should be stored internally as list (like Gurobi)
     assert isinstance(c1, gp.MConstr)
     assert isinstance(c2, gp.MConstr)
+
+    stored_constraints = optimizer._constraints["test_tag"]
+    assert len(stored_constraints) == c1.size + c2.size
+
+    for constr in c1.tolist():
+        assert constr in stored_constraints
+    for constr in c2.tolist():
+        assert constr in stored_constraints
 
 
 def test_add_opportunity_constraints_multiple_limits_and_boundaries(
@@ -203,7 +204,6 @@ def test_add_mutual_exclusion_creates_constraints(
     # Should create one constraint for the intersecting pair
     assert isinstance(mconstr, gp.MConstr)
     assert mconstr.shape == (1,)  # One constraint
-    assert optimizer._constraints["basic"][0] is mconstr
 
     # Should have correct constraint structure
     constr = mconstr[0]  # Get first constraint from matrix
@@ -253,7 +253,6 @@ def test_add_mutual_exclusion_handles_single_label(
     # Should create one constraint for the intersecting bment pathway
     assert isinstance(mconstr, gp.MConstr)
     assert mconstr.shape == (1,)  # One constraint
-    assert optimizer._constraints["exclusion"][0] is mconstr
 
     # Should have correct constraint structure
     constr = mconstr[0]  # Get first constraint from matrix
@@ -392,35 +391,26 @@ def test_remove_constraints_removes_by_tag(sample_gdf: gpd.GeoDataFrame):
         3.0, "<=", boundaries=boundary, tag="other_tag"
     )
 
-    optimizer.model.update()
+    c1_constrs = c1.tolist()
+    c2_constrs = c2.tolist()
+    c3_constrs = c3.tolist()
 
-    # Save number of constraints before removal
-    n_constraints_before = len(optimizer.model.getConstrs())
-
-    # Expected: total constraints added = sum of c1.size, c2.size, c3.size
-    n_c1 = c1.size
-    n_c2 = c2.size
-    n_c3 = c3.size
-
-    total_added_constraints = n_c1 + n_c2 + n_c3
-
-    # Sanity check
-    assert n_constraints_before >= total_added_constraints
-
-    # Remove constraints by tag
     optimizer.remove_constraints("test_tag")
-    optimizer.model.update()
 
-    # Save number of constraints after removal
-    n_constraints_after = len(optimizer.model.getConstrs())
+    # Get remaining model constraints
+    remaining_constraints = optimizer.model.getConstrs()
 
-    # Only constraints from "other_tag" should remain
+    # c1 and c2 constraints should be gone
+    for constr in c1_constrs + c2_constrs:
+        assert constr not in remaining_constraints
+
+    # c3 constraints should still be present
+    for constr in c3_constrs:
+        assert constr in remaining_constraints
+
+    # _constraints dictionary should be updated properly
     assert "test_tag" not in optimizer._constraints
-    assert len(optimizer._constraints["other_tag"]) == 1
-
-    # Should have removed exactly the constraints in c1 and c2
-    expected_removed = n_c1 + n_c2
-    assert n_constraints_before - n_constraints_after == expected_removed
+    assert "other_tag" in optimizer._constraints
 
 
 def test_remove_constraints_invalid_tag(sample_gdf: gpd.GeoDataFrame):
@@ -458,10 +448,11 @@ def test_register_matrix_constraint_less_than(sample_gdf: gpd.GeoDataFrame):
         rhs=rhs,
         tag="test_matrix",
     )
+    stored_constraints = optimizer._constraints["test_matrix"]
 
-    # Should store matrix constraint under tag
+    # Should store flattened constraints under tag
     assert "test_matrix" in optimizer._constraints
-    assert optimizer._constraints["test_matrix"][0] is mconstr
+    assert len(stored_constraints) == mconstr.size
 
     # Should be a matrix constraint object with correct size
     assert isinstance(mconstr, gp.MConstr)
@@ -476,13 +467,15 @@ def test_register_matrix_constraint_less_than(sample_gdf: gpd.GeoDataFrame):
         }
 
         assert constr.Sense == "<"
-        assert constr.RHS == rhs[i]  # noqa: SIM300
+        assert abs(constr.RHS - rhs[i]) < 1e-6
 
         # Each variable should have the correct coefficient
         for j, pid in enumerate(pids):
             var_index = optimizer._pid_to_index[pid]
             assert var_index in actual_coeffs
             assert abs(actual_coeffs[var_index] - coeffs[i, j]) < 1e-6
+
+        assert mconstr.tolist()[i] in stored_constraints
 
 
 def test_register_matrix_constraint_invalid_sense(sample_gdf: gpd.GeoDataFrame):

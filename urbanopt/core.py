@@ -901,7 +901,7 @@ class PathwayOptimizer:
 
         constrs = self.model.addMConstr(coeffs, x, sense, rhs)
 
-        self._constraints.setdefault(tag or "untagged", []).append(constrs)
+        self._constraints.setdefault(tag or "untagged", []).extend(constrs.tolist())
 
         if not defer_update:
             self.model.update()
