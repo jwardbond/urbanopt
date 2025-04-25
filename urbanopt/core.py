@@ -324,7 +324,7 @@ class PathwayOptimizer:
         self,
         limits: float | list[float],
         sense: str,
-        boundaries: None | Polygon | MultiPolygon | list = None,
+        boundaries: None | Polygon | MultiPolygon | list = [None],
         tag: str | None = None,
     ) -> gp.MConstr:
         """Add a constraint limiting the total opportunity within a given boundary (or boundaries).
@@ -348,12 +348,11 @@ class PathwayOptimizer:
         import numpy as np
         from scipy.sparse import coo_matrix
 
-        if isinstance(limits, float):
+        # Coerce inputs to lists
+        if isinstance(limits, (float, int)):
             limits = [limits]
 
-        if boundaries is None:
-            boundaries = [None]
-        elif isinstance(boundaries, (Polygon, MultiPolygon)):
+        if isinstance(boundaries, (Polygon, MultiPolygon)):
             boundaries = [boundaries]
         elif not isinstance(boundaries, list):
             msg = f"Unsupported boundaries type: {type(boundaries)}"
@@ -369,17 +368,19 @@ class PathwayOptimizer:
             pid_to_group = dict.fromkeys(filtered_pids, 0)  # All go into group 0
         else:
             # Case 2: Boundaries specified → spatial join
+
             boundary_gdf = gpd.GeoDataFrame(
                 {"limit": limits}, geometry=boundaries, crs=self.data.crs
             )
             boundary_gdf["group_id"] = boundary_gdf.index
-
+            s = time.time()
             joined = gpd.sjoin(
                 self.data[["pid", "opportunity", "geometry"]],
                 boundary_gdf[["group_id", "geometry"]],
                 how="inner",
                 predicate="intersects",
             )
+            print("Join time", time.time() - s)
 
             if joined.empty:
                 msg = "No pathways intersect the given boundaries."
@@ -392,19 +393,21 @@ class PathwayOptimizer:
 
         # Build mapping and sparse matrix
         pid_to_index = {pid: i for i, pid in enumerate(filtered_pids)}
+        opportunity_map = self.data.set_index("pid")["opportunity"].to_dict()
 
         row_indices = []
         col_indices = []
         data = []
 
+        s = time.time()
         for pid in filtered_pids:
             col_idx = pid_to_index[pid]
             group_idx = pid_to_group[pid]
 
             row_indices.append(group_idx)
             col_indices.append(col_idx)
-            opportunity = self.data.set_index("pid").at[pid, "opportunity"]
-            data.append(opportunity)
+            data.append(opportunity_map[pid])
+        print("coo construction time", time.time() - s)
 
         coeffs = coo_matrix(
             (data, (row_indices, col_indices)), shape=(len(limits), len(filtered_pids))
