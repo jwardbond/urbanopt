@@ -13,7 +13,9 @@ def test_solve_basic_optimization(sample_gdf: gpd.GeoDataFrame):
 
     # Set objective and constraints
     optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-    optimizer.add_min_opportunity(2.0)  # Should force at least one pathway
+    optimizer.add_opportunity_constraints(
+        2.0, ">="
+    )  # Should force at least one pathway
 
     # Solve and check results
     optimizer.solve()
@@ -60,8 +62,8 @@ def test_solve_infeasible_model(sample_gdf: gpd.GeoDataFrame):
     optimizer.set_objective({"cost_emb": 1.0})
 
     # Add contradictory constraints
-    optimizer.add_min_opportunity(10.0)  # Require high opportunity
-    optimizer.add_max_opportunity(5.0)  # But limit to low opportunity
+    optimizer.add_opportunity_constraints(10.0, ">=")  # Require high opportunity
+    optimizer.add_opportunity_constraints(5.0, "<=")  # But limit to low opportunity
 
     # Should raise error for infeasible model
     with pytest.raises(RuntimeError) as exc_info:
@@ -77,7 +79,7 @@ def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
 
     # Set objective and constraints
     optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-    optimizer.add_min_opportunity(2.0)
+    optimizer.add_opportunity_constraints(2.0, ">=")
 
     # Solve and get summary
     optimizer.solve()
@@ -103,8 +105,8 @@ def test_solve_handles_multiple_constraints(sample_gdf: gpd.GeoDataFrame):
 
     # Set objective and constraints
     optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-    optimizer.add_min_opportunity(2.0)
-    optimizer.add_max_opportunity(4.0)
+    optimizer.add_opportunity_constraints(2.0, ">=")
+    optimizer.add_opportunity_constraints(4.0, "<=")
     point = Point(0.5, 0.5)
     optimizer.add_max_opportunity_near_point(3.0, point, 1.0, proj_crs="EPSG:3347")
 

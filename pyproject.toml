@@ -46,6 +46,7 @@ lint.ignore = [
     "FBT002",   # Boolean arguments
     "PLR0913",  # Too many arguments
     "PLR2004",  # Magic values in comparisons
+    "RET505",   # Unecessary else after returns 
     "RET506",   # Unecessary else
     "FIX004",   # Line contains hack
     ]

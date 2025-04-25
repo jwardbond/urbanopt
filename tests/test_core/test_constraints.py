@@ -9,186 +9,181 @@ from urbanopt import PathwayOptimizer
 from urbanopt.core import _reproject_point
 
 
-def test_add_max_opportunity_includes_all_pathways(sample_gdf: gpd.GeoDataFrame):
-    """Test that global max opportunity constraint includes all pathways."""
+def test_add_opportunity_constraints_global(sample_gdf: gpd.GeoDataFrame):
+    """Test that global opportunity constraint includes all pathways in a matrix constraint."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     limit = 4.0
 
-    constraint = optimizer.add_max_opportunity(limit)
+    constraints = optimizer.add_opportunity_constraints(
+        limit,
+        sense="<=",
+    )
     optimizer.model.update()
+    constr = constraints[0]
+    expr = optimizer.model.getRow(constr)
 
-    # Should return a gurobi constraint
-    assert isinstance(constraint, gp.Constr)
+    # Should return a matrix constraint
+    assert isinstance(constraints, gp.MConstr)  # <-- expect MConstr always
 
-    # Should create one constraint in untagged group
-    assert "untagged" in optimizer._constraints
-    assert len(optimizer._constraints["untagged"]) == 1
-
-    # Constraint should have the correct RHS
-    assert limit == constraint.RHS
+    # Should have exactly 1 constraint (one global limit)
+    assert constraints.size == 1  # <-- check matrix size
 
     # Should include all pathway variables
-    expr = optimizer.model.getRow(constraint)
     expected_indices = {optimizer._variables[pid].index for pid in optimizer.pids}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
 
-def test_add_max_opportunity_filters_by_polygon(sample_gdf: gpd.GeoDataFrame):
-    """Test that max opportunity constraint correctly filters by polygon boundary."""
+@pytest.mark.parametrize(
+    "sense_input, expected_sense",
+    [
+        ("<=", "<"),
+        (">=", ">"),
+        ("==", "="),
+    ],
+)
+def test_add_opportunity_constraints_correct_sense(
+    sample_gdf: gpd.GeoDataFrame, sense_input, expected_sense
+):
+    """Test that opportunity constraints are initialized with correct senses ("<=", ">=", "==")."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
+
     limit = 4.0
     boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
 
-    constraint = optimizer.add_max_opportunity(limit, boundary)
-    optimizer.model.update()
-
-    # Should create one constraint in untagged group
-    assert "untagged" in optimizer._constraints
-    assert len(optimizer._constraints["untagged"]) == 1
-    assert isinstance(constraint, gp.Constr)
-    assert limit == constraint.RHS
-
-    # Should include only intersecting variables
-    expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer._variables[pid].index for pid in [1, 2]}
-    used_indices = {expr.getVar(i).index for i in range(expr.size())}
-    assert used_indices == expected_indices
-
-
-def test_add_max_opportunity_filters_by_multipolygon(sample_gdf: gpd.GeoDataFrame):
-    """Test that max opportunity constraint correctly filters by multipolygon boundary."""
-    optimizer = PathwayOptimizer(sample_gdf)
-    optimizer.build_variables()
-    limit = 4.0
-    boundary = MultiPolygon(
-        [
-            Polygon([(0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5)]),
-            Polygon([(0.5, 0.5), (1, 0.5), (1, 1), (0.5, 1)]),
-        ],
+    constraints = optimizer.add_opportunity_constraints(
+        limit,
+        sense=sense_input,
+        boundaries=boundary,
     )
 
-    constraint = optimizer.add_max_opportunity(limit, boundary)
+    constr = constraints[0]
+    assert constr.Sense == expected_sense
+
+
+@pytest.mark.parametrize(
+    "boundary, expected_pids",
+    [
+        (
+            Polygon([(0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5)]),
+            [1],  # Small polygon: only PID 1 inside
+        ),
+        (
+            MultiPolygon(
+                [
+                    Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
+                    Polygon([(2, 2), (3, 2), (3, 3), (2, 3)]),
+                ]
+            ),
+            [1, 2, 3],  # Bigger multipolygon: PIDs 1, 2, and 3
+        ),
+    ],
+)
+def test_add_opportunity_constraints_geom_boundary(
+    sample_gdf: gpd.GeoDataFrame,
+    boundary: Polygon | MultiPolygon,
+    expected_pids: list[int],
+):
+    """Test that opportunity constraint correctly filters different sets of PIDs for Polygon vs MultiPolygon."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+
+    limit = 10.0
+
+    constraints = optimizer.add_opportunity_constraints(
+        limit, sense="<=", boundaries=boundary
+    )
     optimizer.model.update()
 
-    # Should create one constraint in untagged group
-    assert "untagged" in optimizer._constraints
-    assert len(optimizer._constraints["untagged"]) == 1
-    assert isinstance(constraint, gp.Constr)
-    assert limit == constraint.RHS
+    # Should return a matrix constraint
+    assert isinstance(constraints, gp.MConstr)
 
-    # Should include only intersecting variables
-    expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer._variables[pid].index for pid in [1, 2]}
+    # Should have exactly 1 constraint
+    assert constraints.size == 1
+
+    # Should include only the expected variables
+    constr = constraints[0]
+    expr = optimizer.model.getRow(constr)
+    expected_indices = {optimizer._variables[pid].index for pid in expected_pids}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
 
-def test_add_max_opportunity_handles_tags(sample_gdf: gpd.GeoDataFrame):
-    """Test that max opportunity constraints are correctly tagged."""
+def test_add_opportunity_constraints_handles_tags(sample_gdf: gpd.GeoDataFrame):
+    """Test that opportunity constraints are correctly tagged."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
-    c1 = optimizer.add_max_opportunity(4.0, tag="test_tag")
-    c2 = optimizer.add_max_opportunity(5.0, tag="test_tag")
+    limit1 = 4.0
+    limit2 = 5.0
+    boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
 
-    # Should store both constraints under the same tag
+    c1 = optimizer.add_opportunity_constraints(
+        limit1, sense="<=", boundaries=boundary, tag="test_tag"
+    )
+    c2 = optimizer.add_opportunity_constraints(
+        limit2, sense="<=", boundaries=boundary, tag="test_tag"
+    )
+
+    optimizer.model.update()
+
+    # Should store both matrix constraints under the same tag
     assert "test_tag" in optimizer._constraints
     assert len(optimizer._constraints["test_tag"]) == 2
-    assert optimizer._constraints["test_tag"] == [c1, c2]
+
+    # Check that c1 and c2 are stored properly
+    assert optimizer._constraints["test_tag"][0] is c1
+    assert optimizer._constraints["test_tag"][1] is c2
+
+    # Should be MConstrs
+    assert isinstance(c1, gp.MConstr)
+    assert isinstance(c2, gp.MConstr)
 
 
-def test_add_min_opportunity_includes_all_pathways(sample_gdf: gpd.GeoDataFrame):
-    """Test that add_min_opportunity creates a global constraint including all pids."""
+def test_add_opportunity_constraints_multiple_limits_and_boundaries(
+    sample_gdf: gpd.GeoDataFrame,
+):
+    """Test that multiple limits and boundaries create a matrix constraint with correct rows and columns."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
-    limit = 2.0
 
-    constraint = optimizer.add_min_opportunity(limit)
-    optimizer.model.update()
+    limits = [4.0, 5.0]
+    boundaries = [
+        Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),  # Should intersect PID 1, 2
+        Polygon([(2, 2), (3, 2), (3, 3), (2, 3)]),  # Should intersect PID 3
+    ]
 
-    # Should add one constraint to untagged group
-    assert "untagged" in optimizer._constraints
-    assert len(optimizer._constraints["untagged"]) == 1
-    assert isinstance(constraint, gp.Constr)
-    assert limit == constraint.RHS
-
-    # Should include all variables
-    expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer._variables[pid].index for pid in optimizer.pids}
-    used_indices = {expr.getVar(i).index for i in range(expr.size())}
-
-    assert used_indices == expected_indices
-
-
-def test_add_min_opportunity_filters_by_polygon(sample_gdf: gpd.GeoDataFrame):
-    """Test that min opportunity constraint correctly filters by polygon boundary."""
-    optimizer = PathwayOptimizer(sample_gdf)
-    optimizer.build_variables()
-    limit = 2.0
-    boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
-
-    constraint = optimizer.add_min_opportunity(limit, boundary)
-    optimizer.model.update()
-
-    # Should create one constraint in untagged group
-    assert "untagged" in optimizer._constraints
-    assert len(optimizer._constraints["untagged"]) == 1
-    assert isinstance(constraint, gp.Constr)
-    assert limit == constraint.RHS
-
-    # Should include only intersecting variables
-    expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer._variables[pid].index for pid in [1, 2]}
-    used_indices = {expr.getVar(i).index for i in range(expr.size())}
-    assert used_indices == expected_indices
-
-
-def test_add_min_opportunity_filters_by_multipolygon(sample_gdf: gpd.GeoDataFrame):
-    """Test that min opportunity constraint correctly filters by multipolygon boundary."""
-    optimizer = PathwayOptimizer(sample_gdf)
-    optimizer.build_variables()
-    limit = 2.0
-    boundary = MultiPolygon(
-        [
-            Polygon([(0, 0), (0.5, 0), (0.5, 0.5), (0, 0.5)]),
-            Polygon([(0.5, 0.5), (1, 0.5), (1, 1), (0.5, 1)]),
-        ],
+    constraints = optimizer.add_opportunity_constraints(
+        limits,
+        sense="<=",
+        boundaries=boundaries,
+        tag="multi_limits",
     )
-
-    constraint = optimizer.add_min_opportunity(limit, boundary)
     optimizer.model.update()
 
-    # Should create one constraint in untagged group
-    assert "untagged" in optimizer._constraints
-    assert len(optimizer._constraints["untagged"]) == 1
-    assert isinstance(constraint, gp.Constr)
-    assert limit == constraint.RHS
+    # Should return a matrix constraint
+    assert isinstance(constraints, gp.MConstr)
 
-    # Should include only intersecting variables
-    expr = optimizer.model.getRow(constraint)
-    expected_indices = {optimizer._variables[pid].index for pid in [1, 2]}
-    used_indices = {expr.getVar(i).index for i in range(expr.size())}
-    assert used_indices == expected_indices
+    # Should have exactly 2 constraints (one per limit/boundary)
+    assert constraints.size == 2
 
+    # First constraint should involve PID 1 and PID 2
+    constr0 = constraints[0]
+    expr0 = optimizer.model.getRow(constr0)
+    used_indices_0 = {expr0.getVar(j).index for j in range(expr0.size())}
+    expected_indices_0 = {optimizer._variables[1].index, optimizer._variables[2].index}
+    assert used_indices_0 == expected_indices_0
+    assert constr0.RHS == 4.0
 
-def test_add_min_opportunity_handles_tags(sample_gdf: gpd.GeoDataFrame):
-    """Test that min opportunity constraints handle tags correctly."""
-    optimizer = PathwayOptimizer(sample_gdf)
-    optimizer.build_variables()
-
-    c1 = optimizer.add_min_opportunity(2.0, tag="min_tag")
-    c2 = optimizer.add_min_opportunity(3.0)  # Untagged
-
-    # Should store constraints in appropriate groups
-    assert "min_tag" in optimizer._constraints
-    assert "untagged" in optimizer._constraints
-    assert len(optimizer._constraints["min_tag"]) == 1
-    assert len(optimizer._constraints["untagged"]) == 1
-    assert optimizer._constraints["min_tag"][0] == c1
-    assert optimizer._constraints["untagged"][0] == c2
+    # Second constraint should involve PID 3
+    constr1 = constraints[1]
+    expr1 = optimizer.model.getRow(constr1)
+    used_indices_1 = {expr1.getVar(j).index for j in range(expr1.size())}
+    expected_indices_1 = {optimizer._variables[3].index}
+    assert used_indices_1 == expected_indices_1
+    assert constr1.RHS == 5.0
 
 
 def test_add_mutual_exclusion_creates_constraints(
@@ -318,25 +313,6 @@ def test_register_constraint_senses(sample_gdf: gpd.GeoDataFrame):
         )
 
 
-def test_constraint_handles_mixed_tags(sample_gdf: gpd.GeoDataFrame):
-    """Test that different constraint types can be mixed under tags."""
-    # Setup
-    optimizer = PathwayOptimizer(sample_gdf)
-    optimizer.build_variables()
-
-    # Action
-    c1 = optimizer.add_max_opportunity(5.0, tag="mixed")
-    c2 = optimizer.add_min_opportunity(2.0, tag="mixed")
-    c3 = optimizer.add_max_opportunity(3.0)  # Untagged
-    c4 = optimizer.add_min_opportunity(1.0, tag="other")
-
-    # Should organize constraints by tag correctly
-    assert set(optimizer._constraints.keys()) == {"mixed", "other", "untagged"}
-    assert optimizer._constraints["mixed"] == [c1, c2]
-    assert optimizer._constraints["other"] == [c4]
-    assert optimizer._constraints["untagged"] == [c3]
-
-
 def test_add_max_opportunity_near_point_filters_by_distance(
     sample_gdf: gpd.GeoDataFrame,
 ):
@@ -399,33 +375,59 @@ def test_add_max_opportunity_near_point_validates_crs(sample_gdf: gpd.GeoDataFra
 
 
 def test_remove_constraints_removes_by_tag(sample_gdf: gpd.GeoDataFrame):
-    """Test that constraints can be removed by tag."""
+    """Test that removing constraints by tag actually deletes them from the model and tracking dict."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
+    boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+
     # Add constraints with different tags
-    c1 = optimizer.add_max_opportunity(5.0, tag="test_tag")
-    c2 = optimizer.add_min_opportunity(2.0, tag="test_tag")
-    c3 = optimizer.add_max_opportunity(3.0, tag="other_tag")
+    c1 = optimizer.add_opportunity_constraints(
+        5.0, "<=", boundaries=boundary, tag="test_tag"
+    )
+    c2 = optimizer.add_opportunity_constraints(
+        2.0, ">=", boundaries=boundary, tag="test_tag"
+    )
+    c3 = optimizer.add_opportunity_constraints(
+        3.0, "<=", boundaries=boundary, tag="other_tag"
+    )
+
+    optimizer.model.update()
+
+    # Save number of constraints before removal
+    n_constraints_before = len(optimizer.model.getConstrs())
+
+    # Expected: total constraints added = sum of c1.size, c2.size, c3.size
+    n_c1 = c1.size
+    n_c2 = c2.size
+    n_c3 = c3.size
+
+    total_added_constraints = n_c1 + n_c2 + n_c3
+
+    # Sanity check
+    assert n_constraints_before >= total_added_constraints
 
     # Remove constraints by tag
     optimizer.remove_constraints("test_tag")
+    optimizer.model.update()
 
-    # Should remove constraints from tracking
+    # Save number of constraints after removal
+    n_constraints_after = len(optimizer.model.getConstrs())
+
+    # Only constraints from "other_tag" should remain
     assert "test_tag" not in optimizer._constraints
     assert len(optimizer._constraints["other_tag"]) == 1
 
-    # Should remove those same constraints from the model
-    assert c1 not in optimizer.model.getConstrs()
-    assert c2 not in optimizer.model.getConstrs()
-    assert c3 in optimizer.model.getConstrs()
+    # Should have removed exactly the constraints in c1 and c2
+    expected_removed = n_c1 + n_c2
+    assert n_constraints_before - n_constraints_after == expected_removed
 
 
 def test_remove_constraints_invalid_tag(sample_gdf: gpd.GeoDataFrame):
     """Test that removing constraints with invalid tag raises error."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
-    optimizer.add_max_opportunity(5.0, tag="test_tag")
+    optimizer.add_opportunity_constraints(5.0, "<=", tag="test_tag")
 
     # Should raise error for non-existent tag
     with pytest.raises(ValueError) as exc_info:

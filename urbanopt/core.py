@@ -70,7 +70,7 @@ class PathwayOptimizer:
         >>> optimizer = PathwayOptimizer(gdf)
         >>> optimizer.build_variables()
         >>> optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-        >>> optimizer.add_max_opportunity(5.0, tag="constraints")
+        >>> optimizer.add_opportunity_constraints(5.0, tag="constraints")
     """
 
     def __init__(self, gdf: gpd.GeoDataFrame) -> None:
@@ -314,85 +314,148 @@ class PathwayOptimizer:
         """
         summary = self.get_solution_summary()
 
-        print("✅ Optimization Summary")
+        print("\n\nOptimization Summary")
         print(f"  Objective Value   : {summary['objective_value']:.2f}")
         print(f"  Total Opportunity: {summary['total_opportunity']:.2f}")
         print(f"  Solve Time        : {summary['solve_time']:.3f} sec")
         print(f"  Selected Pathways : {summary['selected_count']}")
 
-    def add_max_opportunity(
+    def add_opportunity_constraints(
         self,
-        limit: float,
-        boundary: Polygon | MultiPolygon | None = None,
+        limits: float | list[float],
+        sense: str,
+        boundaries: None | Polygon | MultiPolygon | list = None,
         tag: str | None = None,
-    ) -> gp.Constr:
-        """Add a constraint limiting the total opportunity.
+    ) -> gp.MConstr:
+        """Add a constraint limiting the total opportunity within a given boundary (or boundaries).
+
+        Always returns a matrix constraint.
 
         Args:
-            limit: Maximum allowed total opportunity across all selected pathways.
-            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
-                     that intersect with this boundary will be included in the constraint.
-            tag: Optional tag for constraint tracking/removal.
+            limits (float | list[float]): Maximum allowed total opportunity (or a list of those).
+            sense (str): One of "<=", ">=", or "=="
+            boundaries (None | Polygon | MultiPolygon | list, optional): Optional boundary or list of boundaries.
+            tag (str | None, optional): Optional tag for constraint tracking or removal.
 
         Returns:
-            The created Gurobi constraint object.
+            gp.MConstr: Matrix constraint object.
+
+        Raises:
+            TypeError: If boundaries are not valid geometry types.
+            ValueError: If number of limits and boundaries do not match.
         """
-        # Filter pathways by boundary if provided
-        if boundary is not None:
-            mask = self.data.geometry.intersects(boundary)
-            filtered_pids = self.data[mask]["pid"].tolist()
-        else:
+        import geopandas as gpd
+        import numpy as np
+        from scipy.sparse import coo_matrix
+
+        if isinstance(limits, float):
+            limits = [limits]
+
+        if boundaries is None:
+            boundaries = [None]
+        elif isinstance(boundaries, (Polygon, MultiPolygon)):
+            boundaries = [boundaries]
+        elif not isinstance(boundaries, list):
+            msg = f"Unsupported boundaries type: {type(boundaries)}"
+            raise TypeError(msg)
+
+        if len(limits) != len(boundaries):
+            msg = "Number of limits must match number of boundaries."
+            raise ValueError(msg)
+
+        if boundaries == [None]:
+            # Case 1: No boundary specified: use all pathways
             filtered_pids = self.pids
+            pid_to_group = dict.fromkeys(filtered_pids, 0)  # All go into group 0
+        else:
+            # Case 2: Boundaries specified → spatial join
+            boundary_gdf = gpd.GeoDataFrame(
+                {"limit": limits}, geometry=boundaries, crs=self.data.crs
+            )
+            boundary_gdf["group_id"] = boundary_gdf.index
 
-        # Set index to make lookup faster
-        coeff_map = (
-            self.data.set_index("pid").loc[filtered_pids, "opportunity"].to_dict()
-        )
+            joined = gpd.sjoin(
+                self.data[["pid", "opportunity", "geometry"]],
+                boundary_gdf[["group_id", "geometry"]],
+                how="inner",
+                predicate="intersects",
+            )
 
-        return self._register_constraint(
+            if joined.empty:
+                msg = "No pathways intersect the given boundaries."
+                raise ValueError(msg)
+
+            filtered_pids = joined["pid"].unique()
+            pid_to_group = dict(
+                zip(joined["pid"], joined["group_id"], strict=True),
+            )
+
+        # Build mapping and sparse matrix
+        pid_to_index = {pid: i for i, pid in enumerate(filtered_pids)}
+
+        row_indices = []
+        col_indices = []
+        data = []
+
+        for pid in filtered_pids:
+            col_idx = pid_to_index[pid]
+            group_idx = pid_to_group[pid]
+
+            row_indices.append(group_idx)
+            col_indices.append(col_idx)
+            opportunity = self.data.set_index("pid").at[pid, "opportunity"]
+            data.append(opportunity)
+
+        coeffs = coo_matrix(
+            (data, (row_indices, col_indices)), shape=(len(limits), len(filtered_pids))
+        ).tocsr()
+
+        rhs_array = np.array(limits)
+
+        return self._register_matrix_constraint(
             pids=filtered_pids,
-            coeff_map=coeff_map,
-            sense="<=",
-            rhs=limit,
+            coeffs=coeffs,
+            sense=sense,
+            rhs=rhs_array,
             tag=tag,
         )
 
-    def add_min_opportunity(
-        self,
-        limit: float,
-        boundary: Polygon | MultiPolygon | None = None,
-        tag: str | None = None,
-    ) -> gp.Constr:
-        """Add a constraint requiring a minimum total opportunity.
+    # def add_min_opportunity(
+    #     self,
+    #     limit: float,
+    #     boundary: Polygon | MultiPolygon | None = None,
+    #     tag: str | None = None,
+    # ) -> gp.Constr:
+    #     """Add a constraint requiring a minimum total opportunity.
 
-        Args:
-            limit: Minimum required total opportunity across all selected pathways.
-            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
-                     that intersect with this boundary will be included in the constraint.
-            tag: Optional tag for constraint tracking/removal.
+    #     Args:
+    #         limit: Minimum required total opportunity across all selected pathways.
+    #         boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
+    #                  that intersect with this boundary will be included in the constraint.
+    #         tag: Optional tag for constraint tracking/removal.
 
-        Returns:
-            The created Gurobi constraint object.
-        """
-        # Filter pathways by boundary if provided
-        if boundary is not None:
-            mask = self.data.geometry.intersects(boundary)
-            filtered_pids = self.data[mask]["pid"].tolist()
-        else:
-            filtered_pids = self.pids
+    #     Returns:
+    #         The created Gurobi constraint object.
+    #     """
+    #     # Filter pathways by boundary if provided
+    #     if boundary is not None:
+    #         mask = self.data.geometry.intersects(boundary)
+    #         filtered_pids = self.data[mask]["pid"].tolist()
+    #     else:
+    #         filtered_pids = self.pids
 
-        # Set index to make lookup faster
-        coeff_map = (
-            self.data.set_index("pid").loc[filtered_pids, "opportunity"].to_dict()
-        )
+    #     # Set index to make lookup faster
+    #     coeff_map = (
+    #         self.data.set_index("pid").loc[filtered_pids, "opportunity"].to_dict()
+    #     )
 
-        return self._register_constraint(
-            pids=filtered_pids,
-            coeff_map=coeff_map,
-            sense=">=",
-            rhs=limit,
-            tag=tag,
-        )
+    #     return self._register_constraint(
+    #         pids=filtered_pids,
+    #         coeff_map=coeff_map,
+    #         sense=">=",
+    #         rhs=limit,
+    #         tag=tag,
+    #     )
 
     def add_mutual_exclusion(
         self,
@@ -434,7 +497,6 @@ class PathwayOptimizer:
             return constraints
 
         # Perform spatial join: find intersecting geometry pairs
-        join_start = time.time()
         joined = gpd.sjoin(
             other_paths,
             label1_paths,
@@ -443,11 +505,8 @@ class PathwayOptimizer:
             lsuffix="other",
             rsuffix="label1",
         )
-        print("join_time:", time.time() - join_start)
-        print("length:", len(joined))
 
         # Construct variables
-        constr_start = time.time()
         pids = list(set(joined["pid_label1"]) | set(joined["pid_other"]))
         if not pids:  # No intersecting pathways found
             return None
@@ -485,8 +544,6 @@ class PathwayOptimizer:
         # Construct the rhs
         rhs = np.array(rhs_list)
 
-        print("constr_time:", time.time() - constr_start)
-
         return self._register_matrix_constraint(
             pids=pids,
             coeffs=coeffs,
@@ -494,57 +551,6 @@ class PathwayOptimizer:
             sense="<=",
             tag=tag,
         )
-
-    def _register_matrix_constraint(
-        self,
-        pids: list[int],
-        coeffs: csr_matrix,
-        sense: str,  # "<=", ">=", "=="
-        rhs: np.ndarray,
-        tag: str | None = None,
-        defer_update: bool = False,
-    ) -> list[gp.Constr]:
-        """Register multiple constraints at once using matrix form.
-
-        This is a more efficient way to add many constraints at once compared to
-        adding them one by one. It uses Gurobi's matrix constraint API.
-
-        Args:
-            pids: List of pathway IDs involved in the constraints.
-            coeffs: Sparse coefficient matrix where each row represents one constraint
-                   and each column corresponds to a pathway variable.
-            sense: One of "<=", ">=", or "==". The sense for all constraints.
-            rhs: Right-hand-side values, one per constraint (row in coeffs).
-            tag: Optional tag for constraint tracking/removal.
-            defer_update: If False, calls model.update() before exiting. Defaults to False.
-
-        Returns:
-            List of created Gurobi constraint objects.
-
-        Raises:
-            ValueError: If sense is not one of "<=", ">=", or "==".
-        """
-        sense_map = {
-            "<=": "<",
-            ">=": ">",
-            "==": "=",
-        }
-        if sense not in sense_map:
-            msg = f"Invalid constraint sense: {sense}"
-            raise ValueError(msg)
-        else:
-            sense = sense_map[sense]
-
-        x = [self._variables[pid] for pid in pids]
-
-        constrs = self.model.addMConstr(coeffs, x, sense, rhs)
-
-        self._constraints.setdefault(tag or "untagged", []).append(constrs)
-
-        if not defer_update:
-            self.model.update()
-
-        return constrs
 
     def add_pathway_limit(
         self,
@@ -567,6 +573,7 @@ class PathwayOptimizer:
         Returns:
             The created Gurobi constraint object.
         """
+        # TODO refactor to take labels
         # Filter pathways by start/end
         mask = (self.data["start"] == start) & (self.data["end"] == end)
 
@@ -752,9 +759,16 @@ class PathwayOptimizer:
         Note:
             Variable values are only shown if the model has been solved.
         """
+        # Calculate total constraints by handling both single constraints and MConstraints
+        total_constraints = sum(
+            len(constr) if hasattr(constr, "__len__") else 1
+            for constrs in self._constraints.values()
+            for constr in constrs
+        )
+
         print("Gurobi Model Debug Info")
         print(f"- Variables: {len(self._variables)}")
-        print(f"- Constraints: {sum(len(v) for v in self._constraints.values())}")
+        print(f"- Constraints: {total_constraints}")
         print(f"- Objective set: {bool(self._objective_weights)}")
         print(f"- Model status: {self.model.Status}")
 
@@ -775,7 +789,9 @@ class PathwayOptimizer:
 
             print("\nConstraint Tags:")
             for tag, constrs in self._constraints.items():
-                print(f"  [{tag}] {len(constrs)} constraints")
+                # Count constraints properly for each tag
+                tag_total = sum(len(c) if hasattr(c, "__len__") else 1 for c in constrs)
+                print(f"  [{tag}] {tag_total} constraints")
 
     def export_model(self, path: str) -> None:
         """Export the current model to a human-readable .lp file for debugging.
@@ -840,6 +856,57 @@ class PathwayOptimizer:
             self.model.update()
 
         return constr
+
+    def _register_matrix_constraint(
+        self,
+        pids: list[int],
+        coeffs: csr_matrix,
+        sense: str,  # "<=", ">=", "=="
+        rhs: np.ndarray,
+        tag: str | None = None,
+        defer_update: bool = False,
+    ) -> list[gp.Constr]:
+        """Register multiple constraints at once using matrix form.
+
+        This is a more efficient way to add many constraints at once compared to
+        adding them one by one. It uses Gurobi's matrix constraint API.
+
+        Args:
+            pids: List of pathway IDs involved in the constraints.
+            coeffs: Sparse coefficient matrix where each row represents one constraint
+                   and each column corresponds to a pathway variable.
+            sense: One of "<=", ">=", or "==". The sense for all constraints.
+            rhs: Right-hand-side values, one per constraint (row in coeffs).
+            tag: Optional tag for constraint tracking/removal.
+            defer_update: If False, calls model.update() before exiting. Defaults to False.
+
+        Returns:
+            List of created Gurobi constraint objects.
+
+        Raises:
+            ValueError: If sense is not one of "<=", ">=", or "==".
+        """
+        sense_map = {
+            "<=": "<",
+            ">=": ">",
+            "==": "=",
+        }
+        if sense not in sense_map:
+            msg = f"Invalid constraint sense: {sense}"
+            raise ValueError(msg)
+        else:
+            sense = sense_map[sense]
+
+        x = [self._variables[pid] for pid in pids]
+
+        constrs = self.model.addMConstr(coeffs, x, sense, rhs)
+
+        self._constraints.setdefault(tag or "untagged", []).append(constrs)
+
+        if not defer_update:
+            self.model.update()
+
+        return constrs
 
     def _serialize_constraint(self, constr: gp.Constr) -> ConstraintSchema:
         expr = self.model.getRow(constr)

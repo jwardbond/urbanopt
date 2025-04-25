@@ -12,7 +12,7 @@ def test_print_solution_summary_after_solve(sample_gdf: gpd.GeoDataFrame, capsys
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
-    optimizer.add_min_opportunity(2.0)
+    optimizer.add_opportunity_constraints(2.0, ">=")
     optimizer.solve()
 
     optimizer.print_solution_summary()
@@ -39,7 +39,12 @@ def test_debug_model_basic_info(sample_gdf: gpd.GeoDataFrame, capsys):
     """Test that debug_model prints basic model information."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
-    optimizer.add_max_opportunity(5.0, tag="test")
+
+    # Add a single constraint
+    optimizer.add_opportunity_constraints(5.0, sense="<=", tag="single")
+
+    # Add matrix constraints (mutual exclusion creates matrix constraints)
+    optimizer.add_mutual_exclusion("A", "B", tag="matrix")
 
     optimizer.debug_model()
     captured = capsys.readouterr()
@@ -47,7 +52,17 @@ def test_debug_model_basic_info(sample_gdf: gpd.GeoDataFrame, capsys):
     # Should print basic model information
     assert "Gurobi Model Debug Info" in captured.out
     assert f"Variables: {len(optimizer._variables)}" in captured.out
-    assert "Constraints: 1" in captured.out  # One constraint added
+
+    # Count total constraints (both single and matrix)
+    total_constraints = 0
+    for constrs in optimizer._constraints.values():
+        for constr in constrs:
+            if hasattr(constr, "__len__"):  # MConstraint case
+                total_constraints += len(constr)
+            else:  # Single constraint case
+                total_constraints += 1
+
+    assert f"Constraints: {total_constraints}" in captured.out
     assert "Objective set: False" in captured.out
     assert f"Model status: {optimizer.model.Status}" in captured.out
 
@@ -56,7 +71,13 @@ def test_debug_model_verbose(sample_gdf: gpd.GeoDataFrame, capsys):
     """Test that debug_model prints detailed information in verbose mode."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
-    optimizer.add_max_opportunity(5.0, tag="test")
+
+    # Add a single constraint
+    optimizer.add_opportunity_constraints(5.0, sense="<=", tag="single")
+
+    # Add matrix constraints
+    optimizer.add_mutual_exclusion("A", "B", tag="matrix")
+
     optimizer.solve()
 
     optimizer.debug_model(verbose=True, max_vars=2)
@@ -65,7 +86,11 @@ def test_debug_model_verbose(sample_gdf: gpd.GeoDataFrame, capsys):
     # Should print detailed information
     assert "Variables (first 2):" in captured.out
     assert "Constraint Tags:" in captured.out
-    assert "[test] 1 constraints" in captured.out
+
+    # Verify per-tag constraint counts
+    for tag, constrs in optimizer._constraints.items():
+        tag_total = sum(len(c) if hasattr(c, "__len__") else 1 for c in constrs)
+        assert f"[{tag}] {tag_total} constraints" in captured.out
 
     # Should respect max_vars limit
     var_lines = [line for line in captured.out.split("\n") if "x_" in line]
@@ -77,7 +102,7 @@ def test_export_model(sample_gdf: gpd.GeoDataFrame):
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
-    optimizer.add_max_opportunity(5.0)
+    optimizer.add_opportunity_constraints(5.0, "<=")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_model"
