@@ -187,6 +187,75 @@ def test_add_opportunity_constraints_multiple_limits_and_boundaries(
     assert constr1.RHS == 5.0
 
 
+# FIXME these zone constraints are bad
+def test_zone_difference_constraints_creates_two_constraints(sample_gdf):
+    """Ensure two MConstrs are returned per geometry pair."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+
+    geom_pairs = [
+        (
+            Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
+            Polygon([(1, 0), (2, 0), (2, 1), (1, 1)]),
+        )
+    ]
+    limits = [10.0]
+
+    constrs1, constrs2 = optimizer.add_zone_difference_constraints(
+        geom_pairs, sense="<=", limits=limits, tag="zone_diff"
+    )
+
+    assert isinstance(constrs1, gp.MConstr)
+    assert isinstance(constrs2, gp.MConstr)
+    assert constrs1.size == 1
+    assert constrs2.size == 1
+
+    assert "zone_diff_1" in optimizer._constraints
+    assert "zone_diff_2" in optimizer._constraints
+
+
+def test_zone_difference_constraints_tags_are_correct(sample_gdf):
+    """Check that both MConstrs are stored under separate tags."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+
+    pair = (
+        Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
+        Polygon([(1, 0), (2, 0), (2, 1), (1, 1)]),
+    )
+
+    optimizer.add_zone_difference_constraints(
+        [pair], sense="<=", limits=[5.0], tag="zd_test"
+    )
+
+    assert "zd_test_1" in optimizer._constraints
+    assert "zd_test_2" in optimizer._constraints
+    assert isinstance(optimizer._constraints["zd_test_1"], list)
+    assert isinstance(optimizer._constraints["zd_test_2"], list)
+    assert len(optimizer._constraints["zd_test_1"]) == 1
+    assert len(optimizer._constraints["zd_test_2"]) == 1
+
+
+def test_zone_difference_constraints_handles_non_intersecting(sample_gdf):
+    """Ensure constraint still works when one of the zones has no intersecting geometry."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+
+    pair = (
+        Polygon([(100, 100), (101, 100), (101, 101), (100, 101)]),
+        Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
+    )  # Only second intersects
+
+    constrs1, constrs2 = optimizer.add_zone_difference_constraints(
+        [pair], sense="<=", limits=[999.0], tag="sparse"
+    )
+
+    assert isinstance(constrs1, gp.MConstr)
+    assert isinstance(constrs2, gp.MConstr)
+    assert constrs1.size == 1
+    assert constrs2.size == 1
+
+
 def test_add_mutual_exclusion_creates_constraints(
     mutual_exclusion_gdf: gpd.GeoDataFrame,
 ):
@@ -471,7 +540,7 @@ def test_register_matrix_constraint_less_than(sample_gdf: gpd.GeoDataFrame):
 
         # Each variable should have the correct coefficient
         for j, pid in enumerate(pids):
-            var_index = optimizer._pid_to_index[pid]
+            var_index = optimizer._pid_to_gindex[pid]
             assert var_index in actual_coeffs
             assert abs(actual_coeffs[var_index] - coeffs[i, j]) < 1e-6
 

@@ -1,12 +1,15 @@
 # Obsolete files
 .archive/
 data/
+experiments/
 
 # LLM files
 .cursor/
 .llm/
 .cursorignore
 
+# Scripts
+pareto.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

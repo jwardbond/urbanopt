@@ -1,11 +1,11 @@
 import json
-import time
 from pathlib import Path
 from typing import Literal
 
 import geopandas as gpd
 import gurobipy as gp
 import numpy as np
+import pandas as pd
 from pydantic import BaseModel
 from pyproj import Transformer
 from scipy.sparse import coo_matrix, csr_matrix
@@ -49,7 +49,8 @@ class PathwayOptimizer:
         _variables (dict[int, gp.Var]): Dictionary mapping pathway IDs to Gurobi variables
             (initialized by build_variables).
         _constraints (dict[str, list[gp.Constr]]): Dictionary mapping tags to lists of constraints.
-        _index_to_pid (dict[int, int]): Dictionary mapping variable indices to pathway IDs.
+        _gindex_to_pid (dict[int, int]): Dictionary mapping gurobi variable indices to pathway IDs.
+        _pid_to_gindex (dict[int, int]): Dictionary mapping pathway ID to gurobi variable indices.
         _objective_weights (dict[str, float]): Dictionary mapping cost column names to their weights
             in the objective function.
 
@@ -127,8 +128,8 @@ class PathwayOptimizer:
         self._constraints = {}
 
         # Initialize index mapping dictionaries
-        self._index_to_pid = {}
-        self._pid_to_index = {}
+        self._gindex_to_pid = {}
+        self._pid_to_gindex = {}
 
         # Initialize objective function
         self._objective_weights = {}
@@ -201,8 +202,8 @@ class PathwayOptimizer:
 
         # Build index mapping dictionaries
         for pid, var in self._variables.items():
-            self._index_to_pid[var.index] = pid
-            self._pid_to_index[pid] = var.index
+            self._gindex_to_pid[var.index] = pid
+            self._pid_to_gindex[pid] = var.index
 
         # Update the model to include the new variables
         self.model.update()
@@ -287,14 +288,16 @@ class PathwayOptimizer:
             msg = "Model has not been solved yet"
             raise RuntimeError(msg)
 
-        self.model.update()  # Ensure model state is current before reading values
         selected_pids = self.get_selected_pids()
-        total_opportunity = self.data[self.data["pid"].isin(selected_pids)][
-            "opportunity"
-        ].sum()
+        filtered = self.data[self.data["pid"].isin(selected_pids)]
+
+        total_opportunity = filtered["opportunity"].sum()
+
+        costs = {c: filtered[c].sum() for c in self.cost_columns}
 
         return {
             "objective_value": self.model.ObjVal,
+            "cost_column_sums": costs,
             "total_opportunity": total_opportunity,
             "solve_time": self.model.Runtime,
             "selected_count": len(selected_pids),
@@ -314,7 +317,7 @@ class PathwayOptimizer:
         """
         summary = self.get_solution_summary()
 
-        print("\n\nOptimization Summary")
+        print("Optimization Summary")
         print(f"  Objective Value   : {summary['objective_value']:.2f}")
         print(f"  Total Opportunity: {summary['total_opportunity']:.2f}")
         print(f"  Solve Time        : {summary['solve_time']:.3f} sec")
@@ -344,10 +347,6 @@ class PathwayOptimizer:
             TypeError: If boundaries are not valid geometry types.
             ValueError: If number of limits and boundaries do not match.
         """
-        import geopandas as gpd
-        import numpy as np
-        from scipy.sparse import coo_matrix
-
         # Coerce inputs to lists
         if isinstance(limits, (float, int)):
             limits = [limits]
@@ -373,14 +372,12 @@ class PathwayOptimizer:
                 {"limit": limits}, geometry=boundaries, crs=self.data.crs
             )
             boundary_gdf["group_id"] = boundary_gdf.index
-            s = time.time()
             joined = gpd.sjoin(
                 self.data[["pid", "opportunity", "geometry"]],
                 boundary_gdf[["group_id", "geometry"]],
                 how="inner",
                 predicate="intersects",
             )
-            print("Join time", time.time() - s)
 
             if joined.empty:
                 msg = "No pathways intersect the given boundaries."
@@ -399,7 +396,6 @@ class PathwayOptimizer:
         col_indices = []
         data = []
 
-        s = time.time()
         for pid in filtered_pids:
             col_idx = pid_to_index[pid]
             group_idx = pid_to_group[pid]
@@ -407,7 +403,6 @@ class PathwayOptimizer:
             row_indices.append(group_idx)
             col_indices.append(col_idx)
             data.append(opportunity_map[pid])
-        print("coo construction time", time.time() - s)
 
         coeffs = coo_matrix(
             (data, (row_indices, col_indices)), shape=(len(limits), len(filtered_pids))
@@ -423,42 +418,94 @@ class PathwayOptimizer:
             tag=tag,
         )
 
-    # def add_min_opportunity(
-    #     self,
-    #     limit: float,
-    #     boundary: Polygon | MultiPolygon | None = None,
-    #     tag: str | None = None,
-    # ) -> gp.Constr:
-    #     """Add a constraint requiring a minimum total opportunity.
+    def add_zone_difference_constraints(
+        self,
+        geom_pairs: list[tuple[Polygon | MultiPolygon, Polygon | MultiPolygon]],
+        sense: str,
+        limits: list[float],
+        tag: str | None = None,
+    ) -> tuple[gp.MConstr]:
+        """Contstrains the (absolute) difference in opportunity within two geometries within a given limit.
 
-    #     Args:
-    #         limit: Minimum required total opportunity across all selected pathways.
-    #         boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
-    #                  that intersect with this boundary will be included in the constraint.
-    #         tag: Optional tag for constraint tracking/removal.
+        For each pair of geometries (zone1, zone2), enforces:
+            sum(opportunity in zone1) - sum(opportunity in zone2) <= limit
+            sum(opportunity in zone2) - sum(opportunity in zone1) <= limit
 
-    #     Returns:
-    #         The created Gurobi constraint object.
-    #     """
-    #     # Filter pathways by boundary if provided
-    #     if boundary is not None:
-    #         mask = self.data.geometry.intersects(boundary)
-    #         filtered_pids = self.data[mask]["pid"].tolist()
-    #     else:
-    #         filtered_pids = self.pids
+        Args:
+            geom_pairs: List of (geom1, geom2) tuples.
+            sense (str): One of "<=", ">=", or "=="
+            limits (float | list[float]): Maximum allowed total opportunity (or a list of those).
+            tag (str | None, optional): Optional tag for constraint tracking or removal.
 
-    #     # Set index to make lookup faster
-    #     coeff_map = (
-    #         self.data.set_index("pid").loc[filtered_pids, "opportunity"].to_dict()
-    #     )
+        Returns:
+            List of Gurobi constraint objects.
 
-    #     return self._register_constraint(
-    #         pids=filtered_pids,
-    #         coeff_map=coeff_map,
-    #         sense=">=",
-    #         rhs=limit,
-    #         tag=tag,
-    #     )
+        Raises:
+            ValueError: If geom_pairs and limits are not the same length.
+        """
+        # Create GeoDataFrame
+        geoms1, geoms2 = zip(*geom_pairs, strict=True)
+        indices = list(range(len(geom_pairs)))
+
+        gdf1 = gpd.GeoDataFrame(
+            {"row": indices, "side": 1, "geometry": geoms1},
+            crs=self.data.crs,
+        )
+        gdf2 = gpd.GeoDataFrame(
+            {"row": indices, "side": -1, "geometry": geoms2},
+            crs=self.data.crs,
+        )
+        combined = gpd.GeoDataFrame(
+            pd.concat([gdf1, gdf2], ignore_index=True),
+            crs=self.data.crs,
+        )
+        # Join with data
+        pid_data = self.data[["pid", "opportunity", "geometry"]].copy()
+        combined = combined.sjoin(pid_data, predicate="intersects", how="left")
+        combined = combined[~combined["opportunity"].isna()]
+        combined["pid"] = combined["pid"].astype(int)
+        combined["index_right"] = combined["index_right"].astype(int)
+
+        # Duplicates occur when a pathway is right on a border. We will just drop them
+        # and pretend like they contribute equally to both
+        # HACK
+        dupes = combined.duplicated(subset=["row", "pid"], keep=False)
+        combined = combined[~dupes]
+
+        # Create maps
+        pid_set = combined["pid"].sort_values().unique().tolist()
+        pid_to_index = {p: i for i, p in enumerate(pid_set)}
+
+        # Construct COO matrix
+        row_indices = combined["row"].to_list()
+        col_indices = combined["pid"].map(pid_to_index).to_list()
+        combined["coeff"] = combined["opportunity"] * combined["side"]
+        values = combined["coeff"].to_list()
+
+        coeffs = coo_matrix(
+            (values, (row_indices, col_indices)), shape=(len(limits), len(pid_set))
+        ).tocsr()
+
+        rhs_array = np.array(limits, dtype=float)
+
+        # Add both sides of absolute value constraint
+        constrs1 = self._register_matrix_constraint(
+            pids=pid_set,
+            coeffs=coeffs,
+            sense=sense,
+            rhs=rhs_array,
+            tag=f"{tag}_1",
+        )
+
+        constrs2 = self._register_matrix_constraint(
+            pids=pid_set,
+            coeffs=-1 * coeffs,
+            sense=sense,
+            rhs=rhs_array,
+            tag=f"{tag}_2",
+        )
+
+        return constrs1, constrs2
 
     def add_mutual_exclusion(
         self,
@@ -468,12 +515,8 @@ class PathwayOptimizer:
     ) -> list[gp.Constr]:
         """Add mutual exclusion constraints between pathways based on their labels.
 
-        For the given pathway label(s), this method:
-        1. Finds all pathways matching label1
-        2. If label2 is provided, creates constraints ensuring no pathway with label1
-           can be selected with an intersecting pathway with label2.
-        3. If label2 is not provided, creates constraints ensuring no pathway with label1
-           can be selected with ANY intersecting pathway (regardless of label).
+        If label2 is provided, creates constraints ensuring no pathway with label1 can be selected with an intersecting pathway with label2.
+        If label2 is not provided, creates constraints ensuring no pathway with label1 can be selected with ANY intersecting pathway (regardless of label).
 
         Uses GeoPandas spatial join for efficient intersection detection.
 
@@ -685,6 +728,11 @@ class PathwayOptimizer:
             RuntimeError: If the model is infeasible, unbounded, or fails to solve
                         for any other reason.
         """
+        if verbose:
+            self.model.setParam("OutputFlag", 1)
+        else:
+            self.model.setParam("OutputFlag", 0)
+
         self.model.optimize()
         self.model.update()
         status = self.model.Status
@@ -699,7 +747,7 @@ class PathwayOptimizer:
             msg = f"Optimization failed with status {status}"
             raise RuntimeError(msg)
 
-        if verbose:
+        if not verbose:
             self.print_solution_summary()
 
     def save(self, path: str | Path) -> None:
@@ -916,7 +964,7 @@ class PathwayOptimizer:
         pids, coeffs = [], []
         for i in range(expr.size()):
             var = expr.getVar(i)
-            pid = self._index_to_pid[var.index]
+            pid = self._gindex_to_pid[var.index]
             pids.append(pid)
             coeffs.append(expr.getCoeff(i))
 
