@@ -1,4 +1,5 @@
 import json
+import warnings
 from pathlib import Path
 from typing import Literal
 
@@ -6,6 +7,7 @@ import geopandas as gpd
 import gurobipy as gp
 import numpy as np
 import pandas as pd
+from .polygraph import PolyGraph
 from pydantic import BaseModel
 from pyproj import Transformer
 from scipy.sparse import coo_matrix, csr_matrix
@@ -46,13 +48,14 @@ class PathwayOptimizer:
         model (gp.Model): Gurobi optimization model (initialized by build_variables).
 
     Internal Attributes:
-        _variables (dict[int, gp.Var]): Dictionary mapping pathway IDs to Gurobi variables
+        _variables (dict[str, gp.Var]): Dictionary mapping variable names to Gurobi variables.
             (initialized by build_variables).
         _constraints (dict[str, list[gp.Constr]]): Dictionary mapping tags to lists of constraints.
         _gindex_to_pid (dict[int, int]): Dictionary mapping gurobi variable indices to pathway IDs.
         _pid_to_gindex (dict[int, int]): Dictionary mapping pathway ID to gurobi variable indices.
         _objective_weights (dict[str, float]): Dictionary mapping cost column names to their weights
             in the objective function.
+        _has_dummies (bool): True if dummy "z" variables have been added to the problem (e.g. via add_conversion_constraints)
 
     Example:
         >>> import geopandas as gpd
@@ -124,6 +127,9 @@ class PathwayOptimizer:
         # Extract and store cost columns
         self.cost_columns = [col for col in gdf.columns if col.startswith("cost_")]
 
+        # Initialize variable tracking
+        self._variables = {}
+
         # Initialize constraint tracking
         self._constraints = {}
 
@@ -133,6 +139,8 @@ class PathwayOptimizer:
 
         # Initialize objective function
         self._objective_weights = {}
+
+        self._has_dummies = False
 
     @classmethod
     def load(cls, path: str | Path) -> "PathwayOptimizer":
@@ -195,13 +203,10 @@ class PathwayOptimizer:
         self.model = gp.Model("pathway_optimizer")
 
         # Create binary variables for each pathway
-        self._variables = {
-            pid: self.model.addVar(vtype=gp.GRB.BINARY, name=f"x_{pid}")
-            for pid in self.pids
-        }
+        for pid in self.pids:
+            var = self.model.addVar(vtype=gp.GRB.BINARY, name=f"x_{pid}")
+            self._variables[f"x_{pid}"] = var
 
-        # Build index mapping dictionaries
-        for pid, var in self._variables.items():
             self._gindex_to_pid[var.index] = pid
             self._pid_to_gindex[pid] = var.index
 
@@ -369,7 +374,9 @@ class PathwayOptimizer:
             # Case 2: Boundaries specified → spatial join
 
             boundary_gdf = gpd.GeoDataFrame(
-                {"limit": limits}, geometry=boundaries, crs=self.data.crs
+                {"limit": limits},
+                geometry=boundaries,
+                crs=self.data.crs,
             )
             boundary_gdf["group_id"] = boundary_gdf.index
             joined = gpd.sjoin(
@@ -410,8 +417,10 @@ class PathwayOptimizer:
 
         rhs_array = np.array(limits)
 
+        varnames = [f"x_{pid}" for pid in filtered_pids]
+
         return self._register_matrix_constraint(
-            pids=filtered_pids,
+            varnames=varnames,
             coeffs=coeffs,
             sense=sense,
             rhs=rhs_array,
@@ -475,6 +484,7 @@ class PathwayOptimizer:
         # Create maps
         pid_set = combined["pid"].sort_values().unique().tolist()
         pid_to_index = {p: i for i, p in enumerate(pid_set)}
+        varnames = [f"x_{pid}" for pid in pid_set]
 
         # Construct COO matrix
         row_indices = combined["row"].to_list()
@@ -490,7 +500,7 @@ class PathwayOptimizer:
 
         # Add both sides of absolute value constraint
         constrs1 = self._register_matrix_constraint(
-            pids=pid_set,
+            varnames=varnames,
             coeffs=coeffs,
             sense=sense,
             rhs=rhs_array,
@@ -498,7 +508,7 @@ class PathwayOptimizer:
         )
 
         constrs2 = self._register_matrix_constraint(
-            pids=pid_set,
+            varnames=varnames,
             coeffs=-1 * coeffs,
             sense=sense,
             rhs=rhs_array,
@@ -506,6 +516,186 @@ class PathwayOptimizer:
         )
 
         return constrs1, constrs2
+
+    # def add_conversion_constraints(
+    #     self,
+    #     start_name: list[str],
+    #     sense: str,
+    #     limit: float,
+    #     check_overlaps: bool = False,
+    #     proj_crs: str | None = None,
+    #     debuff: float = 0,
+    #     tag: str | None = None,
+    # ) -> None:
+    #     """Fill in."""
+
+    #     # Checking arguments
+    #     if debuff < 0:
+    #         msg = "Value for parameter debuff must be >= 0."
+    #         raise ValueError(msg)
+    #     if debuff > 0 and not check_overlaps:
+    #         msg = "Specifying debuff without setting check_overlaps=True will not do anything"
+    #         warnings.warn(msg, stacklevel=2)
+
+    #     filtered = self.data[self.data["start"] == start_name].copy()
+    #     if len(filtered) < 1:
+    #         msg = f"No pathways start from {start_name}."
+    #         raise ValueError
+
+    #     if proj_crs is not None:
+    #         filtered = filtered.to_crs(proj_crs)
+    #     elif not filtered.crs or filtered.crs.is_geographic:
+    #         msg = f"Data has a geographic crs ({filtered.crs}). Must provide projected CRS."
+    #         raise ValueError(msg)
+
+    #     # Getting relevant pids
+    #     if check_overlaps:
+    #         filtered = filtered.buffer(debuff)
+    #         grph = PolyGraph.create_from_geoseries(
+    #             filtered.set_index("pid")["geometry"],
+    #         )
+    #         pids = grph.adj_list
+    #     else:
+    #         pids = {p: {} for p in filtered.pids}
+
+    #     # Loop through pid dict. If a pid has an overlap, the value will be a non-empty set.
+    #     # If the set is non-empty,
+
+    #     var_list = []
+    #     visited = set()
+
+    #     for pid, overlap_set in pids.items():
+    #         if not overlap_set:  # just add the variable to the constraint
+    #             var_list.append(self._variables[pid])
+    #         elif overlap_set in visited: # We've already added an indicator variable for the set
+    #             pass
+    #         else: # Add the dummy indicator variable
+    #             suffix = "".join(str(i) for i in sorted(overlap_set))
+    #             z = self.model.addVar(
+    #                 vtype=gp.GRB.CONTINUOUS,
+    #                 lb=0.0,
+    #                 ub=1.0,
+    #                 name=f"z_{suffix}",
+    #             )
+    #             self._variables[f"z_{suffix}"] = z
+
+    #             self._register_constraint(
+    #                 var_names = [],
+    #                 coeff_map = {},
+
+    #             )
+
+    #             var_list.append(z)
+
+    #         else:  # Add a dummy indicator variable to the model and constraint
+    #             if overlaps
+
+    #             z = self.model.addVar(
+    #                 vtype=gp.GRB.CONTINUOUS,
+    #                 lb=0.0,
+    #                 ub=1.0,
+    #                 name=f"z_{i}",
+    #             )
+    #             self._variables[f"z_{i}"] = z
+    #             self._gindex_to_pid[z.index] = f"z_{i}"
+    #             self._pid_to_gindex[f"z_{i}"] = z.index
+    #             self.pids.append(f"z_{i}")
+    #             z_vars.append(z)
+
+    #             # OR constraints
+    #             for pid in row["pid_list"]:
+    #                 self._register_constraint(
+    #                     pids=[f"z_{i}", pid],
+    #                     coeff_map={f"z_{i}": 1.0, pid: -1.0},
+    #                     sense=">=",
+    #                     rhs=0.0,
+    #                     tag=tag,
+    #                     defer_update=True,
+    #                 )
+
+    #     return
+
+    # # Filter out pathways with the same start
+    # # If check overlap
+    #     # Get overlaps for every polygon (spatial graph)
+    #     # Add dummy variables for every overlap
+    # if (len(labels) < 2) and labels_overlap:
+    #     msg = f"Provided {len(labels)} labels, there must be at least two labels for an overlap"
+    #     raise ValueError(msg)
+
+    # if labels_overlap:
+    #     dfs = []
+
+    #     # Get separate dfs for every label
+    #     for label in labels:
+    #         subset = self.data[self.data["label"] == label].copy()
+    #         subset[f"{label}_pid"]
+    #         dfs.append(subset)
+
+    #     # Find overlapping pathways between labels
+    #     joined = dfs[0]
+    #     for i in range(1, len(dfs)):
+    #         source = joined
+
+    #         target = dfs[i + 1]
+    #         target_label = labels[i + 1]
+
+    #         # Left join
+    #         joined = _sjoin_greatest_intersection(
+    #             source,
+    #             target,
+    #             [f"{target_label}_pid"],
+    #         )
+
+    #         # Create outer join
+    #         missing = target[
+    #             ~target[f"{target_label}_pid"].isin(joined[f"{target_label}_pid"])
+    #         ]
+
+    #         joined = pd.concat([joined, missing], ignore_index=True)
+
+    #     # Clean up
+    #     pid_cols = [col for col in joined.columns if col.endswith("_pid")]
+    #     joined["pid_list"] = joined[pid_cols].values.tolist()
+    #     joined = joined[joined["pid_list"].map(len) > 1]
+
+    #     # Create dummy indicator vars
+    #     z_vars = []
+    #     for i, row in joined.iterrows():
+    #         # Vars
+    #         z = self.model.addVar(
+    #             vtype=gp.GRB.CONTINUOUS,
+    #             lb=0.0,
+    #             ub=1.0,
+    #             name=f"z_{i}",
+    #         )
+    #         self._variables[f"z_{i}"] = z
+    #         self._gindex_to_pid[z.index] = f"z_{i}"
+    #         self._pid_to_gindex[f"z_{i}"] = z.index
+    #         self.pids.append(f"z_{i}")
+    #         z_vars.append(z)
+
+    #         # OR constraints
+    #         for pid in row["pid_list"]:
+    #             self._register_constraint(
+    #                 pids=[f"z_{i}", pid],
+    #                 coeff_map={f"z_{i}": 1.0, pid: -1.0},
+    #                 sense=">=",
+    #                 rhs=0.0,
+    #                 tag=tag,
+    #                 defer_update=True,
+    #             )
+
+    #         # Adding to objective
+    #         obj_expr = gp.quicksum(z for z in z_vars.values())
+    #         self.model.setObjective(self.model.getObjective() + obj_expr)
+
+    #     self._has_dummies = True
+
+    #     # Constructing final pid list
+    #     pids = (joined["pid_list"].map(len) > 2)
+
+    # else:
 
     def add_mutual_exclusion(
         self,
@@ -590,54 +780,58 @@ class PathwayOptimizer:
         # Construct the rhs
         rhs = np.array(rhs_list)
 
+        # Convert to variable names
+        varnames = [f"x_{pid}" for pid in pids]
+
         return self._register_matrix_constraint(
-            pids=pids,
+            varnames=varnames,
             coeffs=coeffs,
             rhs=rhs,
             sense="<=",
             tag=tag,
         )
 
-    def add_pathway_limit(
-        self,
-        start: str,
-        end: str,
-        max_count: float,
-        boundary: Polygon | MultiPolygon | None = None,
-        tag: str | None = None,
-    ) -> gp.Constr:
-        """Add a constraint limiting the number of selected pathways of a specific type.
+    # FIXME needs to add by label
+    # def add_pathway_limit(
+    #     self,
+    #     start: str,
+    #     end: str,
+    #     max_count: float,
+    #     boundary: Polygon | MultiPolygon | None = None,
+    #     tag: str | None = None,
+    # ) -> gp.Constr:
+    #     """Add a constraint limiting the number of selected pathways of a specific type.
 
-        Args:
-            start: Start point/area identifier.
-            end: End point/area identifier.
-            max_count: Maximum number of pathways that can be selected.
-            boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
-                     that intersect with this boundary will be included in the constraint.
-            tag: Optional tag for constraint tracking/removal.
+    #     Args:
+    #         start: Start point/area identifier.
+    #         end: End point/area identifier.
+    #         max_count: Maximum number of pathways that can be selected.
+    #         boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
+    #                  that intersect with this boundary will be included in the constraint.
+    #         tag: Optional tag for constraint tracking/removal.
 
-        Returns:
-            The created Gurobi constraint object.
-        """
-        # TODO refactor to take labels
-        # Filter pathways by start/end
-        mask = (self.data["start"] == start) & (self.data["end"] == end)
+    #     Returns:
+    #         The created Gurobi constraint object.
+    #     """
+    #     # TODO refactor to take labels
+    #     # Filter pathways by start/end
+    #     mask = (self.data["start"] == start) & (self.data["end"] == end)
 
-        # Apply boundary filter if provided
-        if boundary is not None:
-            mask = mask & self.data.geometry.intersects(boundary)
+    #     # Apply boundary filter if provided
+    #     if boundary is not None:
+    #         mask = mask & self.data.geometry.intersects(boundary)
 
-        filtered_pids = self.data[mask]["pid"].tolist()
+    #     filtered_pids = self.data[mask]["pid"].tolist()
 
-        coeff_map = dict.fromkeys(filtered_pids, 1.0)
+    #     coeff_map = dict.fromkeys(filtered_pids, 1.0)
 
-        return self._register_constraint(
-            pids=filtered_pids,
-            coeff_map=coeff_map,
-            sense="<=",
-            rhs=max_count,
-            tag=tag,
-        )
+    #     return self._register_constraint(
+    #         pids=filtered_pids,
+    #         coeff_map=coeff_map,
+    #         sense="<=",
+    #         rhs=max_count,
+    #         tag=tag,
+    #     )
 
     def add_max_opportunity_near_point(
         self,
@@ -678,12 +872,13 @@ class PathwayOptimizer:
         filtered_pids = data[mask]["pid"].tolist()
 
         coeff_map = {
-            pid: self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
+            f"x_{pid}": self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
             for pid in filtered_pids
         }
+        varnames = list(coeff_map.keys())
 
         return self._register_constraint(
-            pids=filtered_pids,
+            varnames=varnames,
             coeff_map=coeff_map,
             sense="<=",
             rhs=limit,
@@ -862,8 +1057,8 @@ class PathwayOptimizer:
 
     def _register_constraint(
         self,
-        pids: list[int],
-        coeff_map: dict[int, float],
+        varnames: list[str],
+        coeff_map: dict[str, float],
         sense: str,  # "<=", ">=", "=="
         rhs: float,
         tag: str | None = None,
@@ -874,7 +1069,7 @@ class PathwayOptimizer:
         Registers a constraint with the gurobi model, and stores a reference to it.
 
         Args:
-            pids: List of pathway IDs involved.
+            varnames: List of variable names involved in the constraint.
             coeff_map: Dictionary mapping pid to coefficient.
             sense: One of "<=", ">=", or "==".
             rhs: Right-hand-side limit.
@@ -887,7 +1082,7 @@ class PathwayOptimizer:
         Raises:
             ValueError: If sense is not one of "<=", ">=", or "==".
         """
-        terms = [coeff_map[pid] * self._variables[pid] for pid in pids]
+        terms = [coeff_map[vn] * self._variables[vn] for vn in varnames]
         expr = gp.quicksum(terms)
 
         if sense == "<=":
@@ -910,7 +1105,7 @@ class PathwayOptimizer:
 
     def _register_matrix_constraint(
         self,
-        pids: list[int],
+        varnames: list[str],
         coeffs: csr_matrix,
         sense: str,  # "<=", ">=", "=="
         rhs: np.ndarray,
@@ -923,7 +1118,7 @@ class PathwayOptimizer:
         adding them one by one. It uses Gurobi's matrix constraint API.
 
         Args:
-            pids: List of pathway IDs involved in the constraints.
+            varnames: List of variable names involved in the constraints.
             coeffs: Sparse coefficient matrix where each row represents one constraint
                    and each column corresponds to a pathway variable.
             sense: One of "<=", ">=", or "==". The sense for all constraints.
@@ -948,7 +1143,7 @@ class PathwayOptimizer:
         else:
             sense = sense_map[sense]
 
-        x = [self._variables[pid] for pid in pids]
+        x = [self._variables[vn] for vn in varnames]
 
         constrs = self.model.addMConstr(coeffs, x, sense, rhs)
 
@@ -1003,3 +1198,66 @@ def _reproject_point(point: Point, from_crs: str, to_crs: str) -> Point:
     transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
     x, y = transformer.transform(point.x, point.y)
     return Point(x, y)
+
+
+def _sjoin_greatest_intersection(
+    target_df: gpd.GeoDataFrame,
+    source_df: gpd.GeoDataFrame,
+    variables: list[str],
+) -> gpd.GeoDataFrame:
+    """Join variables from source_df based on the largest intersection. In case of a tie it picks the first one.
+
+    From https://pysal.org/tobler/_modules/tobler/area_weighted/area_join.html#area_join
+
+    Args:
+        source_df (geopandas.GeoDataFrame): GeoDataFrame containing source values.
+        target_df (geopandas.GeoDataFrame): GeoDataFrame containing target values.
+        variables (str or list-like): Column(s) in `source_df` dataframe for variable(s) to be joined.
+
+    Returns:
+        geopandas.GeoDataFrame: The `target_df` GeoDataFrame with joined variables as additional columns.
+
+    """
+    if not pd.api.types.is_list_like(variables):
+        variables = [variables]
+
+    for v in variables:
+        if v in target_df.columns:
+            msg = f"Column '{v}' already present in target_df."
+            raise ValueError(msg)
+
+    target_df = target_df.copy()
+    target_ix, source_ix = source_df.sindex.query(
+        target_df.geometry,
+        predicate="intersects",
+    )
+    areas = (
+        target_df.geometry.values[target_ix]  # noqa: PD011
+        .intersection(source_df.geometry.values[source_ix])  # noqa: PD011
+        .area
+    )
+
+    main = []
+    for i in range(len(target_df)):  # vectorise this loop?
+        mask = target_ix == i
+        if np.any(mask):
+            main.append(source_ix[mask][np.argmax(areas[mask])])
+        else:
+            main.append(np.nan)
+
+    main = np.array(main, dtype=float)
+    mask = ~np.isnan(main)
+
+    for v in variables:
+        arr = np.empty(len(main), dtype=object)
+        arr[mask] = source_df[v].to_numpy()[main[mask].astype(int)]
+        try:
+            arr = arr.astype(source_df[v].dtype)
+        except TypeError:
+            warnings.warn(
+                f"Cannot preserve dtype of '{v}'. Falling back to `dtype=object`.",
+                stacklevel=2,
+            )
+        target_df[v] = arr
+
+    return target_df

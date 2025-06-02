@@ -24,13 +24,15 @@ def test_add_opportunity_constraints_global(sample_gdf: gpd.GeoDataFrame):
     expr = optimizer.model.getRow(constr)
 
     # Should return a matrix constraint
-    assert isinstance(constraints, gp.MConstr)  # <-- expect MConstr always
+    assert isinstance(constraints, gp.MConstr)
 
     # Should have exactly 1 constraint (one global limit)
     assert constraints.size == 1  # <-- check matrix size
 
     # Should include all pathway variables
-    expected_indices = {optimizer._variables[pid].index for pid in optimizer.pids}
+    expected_indices = {
+        optimizer._variables[f"x_{pid}"].index for pid in optimizer.pids
+    }
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
@@ -106,7 +108,7 @@ def test_add_opportunity_constraints_geom_boundary(
     # Should include only the expected variables
     constr = constraints[0]
     expr = optimizer.model.getRow(constr)
-    expected_indices = {optimizer._variables[pid].index for pid in expected_pids}
+    expected_indices = {optimizer._variables[f"x_{pid}"].index for pid in expected_pids}
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
     assert used_indices == expected_indices
 
@@ -174,7 +176,10 @@ def test_add_opportunity_constraints_multiple_limits_and_boundaries(
     constr0 = constraints[0]
     expr0 = optimizer.model.getRow(constr0)
     used_indices_0 = {expr0.getVar(j).index for j in range(expr0.size())}
-    expected_indices_0 = {optimizer._variables[1].index, optimizer._variables[2].index}
+    expected_indices_0 = {
+        optimizer._variables["x_1"].index,
+        optimizer._variables["x_2"].index,
+    }
     assert used_indices_0 == expected_indices_0
     assert constr0.RHS == 4.0
 
@@ -182,7 +187,7 @@ def test_add_opportunity_constraints_multiple_limits_and_boundaries(
     constr1 = constraints[1]
     expr1 = optimizer.model.getRow(constr1)
     used_indices_1 = {expr1.getVar(j).index for j in range(expr1.size())}
-    expected_indices_1 = {optimizer._variables[3].index}
+    expected_indices_1 = {optimizer._variables["x_3"].index}
     assert used_indices_1 == expected_indices_1
     assert constr1.RHS == 5.0
 
@@ -283,7 +288,10 @@ def test_add_mutual_exclusion_creates_constraints(
 
     # Should include correct variables (pid 1 and pid 3)
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
-    expected_indices = {optimizer._variables[1].index, optimizer._variables[3].index}
+    expected_indices = {
+        optimizer._variables["x_1"].index,
+        optimizer._variables["x_3"].index,
+    }
     assert used_indices == expected_indices
 
 
@@ -332,53 +340,11 @@ def test_add_mutual_exclusion_handles_single_label(
 
     # Should include correct variables (pid 1 and pid 3)
     used_indices = {expr.getVar(i).index for i in range(expr.size())}
-    expected_indices = {optimizer._variables[1].index, optimizer._variables[3].index}
+    expected_indices = {
+        optimizer._variables["x_1"].index,
+        optimizer._variables["x_3"].index,
+    }
     assert used_indices == expected_indices
-
-
-def test_register_constraint_senses(sample_gdf: gpd.GeoDataFrame):
-    """Test that _register_constraint handles all constraint types correctly."""
-    optimizer = PathwayOptimizer(sample_gdf)
-    optimizer.build_variables()
-
-    # Should create less-than constraint
-    const_le = optimizer._register_constraint(
-        pids=optimizer.pids,
-        coeff_map=dict.fromkeys(optimizer.pids, 1.0),
-        sense="<=",
-        rhs=5.0,
-        tag="test_le",
-    )
-    assert const_le.Sense == "<"
-
-    # Should create greater-than constraint
-    const_ge = optimizer._register_constraint(
-        pids=optimizer.pids,
-        coeff_map=dict.fromkeys(optimizer.pids, 1.0),
-        sense=">=",
-        rhs=2.0,
-        tag="test_ge",
-    )
-    assert const_ge.Sense == ">"
-
-    # Should create equality constraint
-    const_eq = optimizer._register_constraint(
-        pids=optimizer.pids,
-        coeff_map=dict.fromkeys(optimizer.pids, 1.0),
-        sense="==",
-        rhs=3.0,
-        tag="test_eq",
-    )
-    assert const_eq.Sense == "="
-
-    # Should reject invalid constraint sense
-    with pytest.raises(ValueError, match="Invalid constraint sense"):
-        optimizer._register_constraint(
-            pids=optimizer.pids,
-            coeff_map=dict.fromkeys(optimizer.pids, 1.0),
-            sense="invalid",
-            rhs=1.0,
-        )
 
 
 def test_add_max_opportunity_near_point_filters_by_distance(
@@ -414,7 +380,7 @@ def test_add_max_opportunity_near_point_filters_by_distance(
     projected_point = _reproject_point(point, sample_gdf.crs, proj_crs)
     mask = projected_data.geometry.centroid.distance(projected_point) <= distance
     expected_pids = projected_data[mask]["pid"].tolist()
-    expected_indices = {optimizer._variables[pid].index for pid in expected_pids}
+    expected_indices = {optimizer._variables[f"x_{pid}"].index for pid in expected_pids}
 
     assert used_indices == expected_indices
 
@@ -440,6 +406,52 @@ def test_add_max_opportunity_near_point_validates_crs(sample_gdf: gpd.GeoDataFra
         proj_crs="EPSG:3347",
     )
     assert isinstance(constraint, gp.Constr)
+
+
+def test_register_constraint_senses(sample_gdf: gpd.GeoDataFrame):
+    """Test that _register_constraint handles all constraint types correctly."""
+    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer.build_variables()
+
+    # Should create less-than constraint
+    varnames = [f"x_{p}" for p in optimizer.pids]
+    const_le = optimizer._register_constraint(
+        varnames=varnames,
+        coeff_map=dict.fromkeys(varnames, 1.0),
+        sense="<=",
+        rhs=5.0,
+        tag="test_le",
+    )
+    assert const_le.Sense == "<"
+
+    # Should create greater-than constraint
+    const_ge = optimizer._register_constraint(
+        varnames=varnames,
+        coeff_map=dict.fromkeys(varnames, 1.0),
+        sense=">=",
+        rhs=2.0,
+        tag="test_ge",
+    )
+    assert const_ge.Sense == ">"
+
+    # Should create equality constraint
+    const_eq = optimizer._register_constraint(
+        varnames=varnames,
+        coeff_map=dict.fromkeys(varnames, 1.0),
+        sense="==",
+        rhs=3.0,
+        tag="test_eq",
+    )
+    assert const_eq.Sense == "="
+
+    # Should reject invalid constraint sense
+    with pytest.raises(ValueError, match="Invalid constraint sense"):
+        optimizer._register_constraint(
+            varnames=varnames,
+            coeff_map=dict.fromkeys(varnames, 1.0),
+            sense="invalid",
+            rhs=1.0,
+        )
 
 
 def test_remove_constraints_removes_by_tag(sample_gdf: gpd.GeoDataFrame):
@@ -497,6 +509,7 @@ def test_remove_constraints_invalid_tag(sample_gdf: gpd.GeoDataFrame):
 
 def test_register_matrix_constraint(sample_gdf: gpd.GeoDataFrame):
     """Test that matrix constraints are correctly registered with less-than sense."""
+    # TODO
 
 
 def test_register_matrix_constraint_less_than(sample_gdf: gpd.GeoDataFrame):
@@ -504,6 +517,7 @@ def test_register_matrix_constraint_less_than(sample_gdf: gpd.GeoDataFrame):
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     pids = [1, 2]
+    varnames = [f"x_{pid}" for pid in pids]
     coeffs = csr_matrix([[1.0, 1.0], [2.0, 3.0]])
     rhs = np.array([1.0, 5.0])
 
@@ -511,7 +525,7 @@ def test_register_matrix_constraint_less_than(sample_gdf: gpd.GeoDataFrame):
     # 2x1 + 3x2 <= 5.0
 
     mconstr = optimizer._register_matrix_constraint(
-        pids=pids,
+        varnames=varnames,
         coeffs=coeffs,
         sense="<=",
         rhs=rhs,
@@ -556,13 +570,14 @@ def test_register_matrix_constraint_invalid_sense(sample_gdf: gpd.GeoDataFrame):
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     pids = [1, 2]
+    varnames = [f"x_{p}" for p in pids]
     coeffs = csr_matrix([[1.0, 1.0], [2.0, 3.0]])
     rhs = np.array([1.0, 5.0])
 
     # Should reject invalid sense
     with pytest.raises(ValueError, match="Invalid constraint sense"):
         optimizer._register_matrix_constraint(
-            pids=pids,
+            varnames=varnames,
             coeffs=coeffs,
             sense="invalid",
             rhs=rhs,
