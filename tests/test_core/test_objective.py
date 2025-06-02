@@ -36,7 +36,7 @@ def test_set_objective_valid_weights(sample_gdf: gpd.GeoDataFrame):
     # All pids should be in the objective
     objective = optimizer.model.getObjective()
     pids_in_objective = {
-        optimizer._index_to_pid[objective.getVar(i).index]
+        optimizer._gindex_to_pid[objective.getVar(i).index]
         for i in range(objective.size())
     }
     expected_pids = set(optimizer.pids)
@@ -45,7 +45,7 @@ def test_set_objective_valid_weights(sample_gdf: gpd.GeoDataFrame):
     # Objective values should have the correct weights
     for i in range(objective.size()):
         v = objective.getVar(i)
-        pid = optimizer._index_to_pid[v.index]
+        pid = optimizer._gindex_to_pid[v.index]
         coeff = objective.getCoeff(i)
 
         expected_coeff = (

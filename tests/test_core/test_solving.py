@@ -25,6 +25,10 @@ def test_solve_basic_optimization(sample_gdf: gpd.GeoDataFrame):
     assert len(selected) > 0
     assert all(pid in optimizer.pids for pid in selected)
 
+    #  Should select the correct optimal pathway
+    assert len(selected) == 1
+    assert selected[0] == 2
+
     # Should have optimal solution status
     assert optimizer.model.Status == gp.GRB.OPTIMAL
 
@@ -87,12 +91,21 @@ def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
 
     # Should contain all required fields
     assert "objective_value" in summary
+    assert "cost_column_sums" in summary
     assert "total_opportunity" in summary
     assert "solve_time" in summary
     assert "selected_count" in summary
 
     # Should have valid values
     assert summary["selected_count"] == len(optimizer.get_selected_pids())
+
+    assert isinstance(summary["cost_column_sums"], dict)
+    assert len(summary["cost_column_sums"]) == 2
+    assert "cost_emb" in summary["cost_column_sums"]
+    assert "cost_transit" in summary["cost_column_sums"]
+    assert pytest.approx(summary["cost_column_sums"]["cost_emb"]) == 20
+    assert pytest.approx(summary["cost_column_sums"]["cost_transit"]) == 15
+
     assert summary["solve_time"] >= 0
     assert summary["objective_value"] >= 0
     assert summary["total_opportunity"] >= 2.0  # Due to min_opportunity constraint

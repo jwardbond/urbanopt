@@ -17,7 +17,7 @@ from shapely.geometry import MultiPolygon, Point, Polygon
 class ConstraintSchema(BaseModel):
     """Schema for serializing constraints."""
 
-    pids: list[int]
+    varnames: list[str]
     coeffs: list[float]
     sense: Literal["<=", ">=", "=="]
     rhs: float
@@ -26,7 +26,7 @@ class ConstraintSchema(BaseModel):
 class OptimizerConfigSchema(BaseModel):
     """Schema for serializing a PathywayOptimizer Configuration."""
 
-    pids: list[int]
+    varnames: list[str]
     cost_columns: list[str]
     objective: dict[str, float] | None
     constraints: dict[str, list[ConstraintSchema]]
@@ -127,15 +127,11 @@ class PathwayOptimizer:
         # Extract and store cost columns
         self.cost_columns = [col for col in gdf.columns if col.startswith("cost_")]
 
-        # Initialize variable tracking
-        self._variables = {}
+        # Initialize the model
+        self.model = gp.Model("pathway_optimizer")
 
         # Initialize constraint tracking
         self._constraints = {}
-
-        # Initialize index mapping dictionaries
-        self._gindex_to_pid = {}
-        self._pid_to_gindex = {}
 
         # Initialize objective function
         self._objective_weights = {}
@@ -174,10 +170,6 @@ class PathwayOptimizer:
         config_dict = json.loads(json_path.read_text())
         config = OptimizerConfigSchema.model_validate(config_dict)
 
-        if config.pids != data["pid"].tolist():
-            msg = "Saved configuration does not match loaded data"
-            raise ValueError(msg)
-
         # Build model
         optimizer = cls(data)
         optimizer.build_variables()
@@ -199,8 +191,13 @@ class PathwayOptimizer:
         Creates one binary variable per pathway ID and stores them in self._variables.
         Also creates and stores the Gurobi model in self.model.
         """
-        # Create the model
-        self.model = gp.Model("pathway_optimizer")
+
+        # Initialize variable tracking
+        self._variables = {}
+
+        # Initialize index mapping dictionaries
+        self._gindex_to_pid = {}
+        self._pid_to_gindex = {}
 
         # Create binary variables for each pathway
         for pid in self.pids:
@@ -242,12 +239,14 @@ class PathwayOptimizer:
 
         # Precomputing weights per pid saves having to
         # construct a huge gurobi linear expression
+        varnames = [f"x_{pid}" for pid in self.pids]
         weighted_cost = {
-            pid: sum(weights[col] * cost_matrix[pid][col] for col in weights)
+            f"x_{pid}": sum(weights[col] * cost_matrix[pid][col] for col in weights)
             for pid in self.pids
         }
+
         objective = gp.quicksum(
-            weighted_cost[pid] * self._variables[pid] for pid in self.pids
+            weighted_cost[vn] * self._variables[vn] for vn in varnames
         )
 
         # Set as minimization objective
@@ -272,8 +271,9 @@ class PathwayOptimizer:
 
         return [
             pid
-            for pid, var in self._variables.items()
-            if abs(var.X - 1.0) < 1e-6  # Check if binary variable is 1
+            for pid in self.pids
+            if abs(self._variables[f"x_{pid}"].X - 1.0)
+            < 1e-6  # Check if binary variable is 1
         ]
 
     def get_solution_summary(self) -> dict:
@@ -980,7 +980,7 @@ class PathwayOptimizer:
 
         # Build the full schema
         config = OptimizerConfigSchema(
-            pids=self.pids,
+            varnames=self._variables.keys(),
             cost_columns=self.cost_columns,
             objective=self._objective_weights
             if self._objective_weights
@@ -1156,16 +1156,16 @@ class PathwayOptimizer:
 
     def _serialize_constraint(self, constr: gp.Constr) -> ConstraintSchema:
         expr = self.model.getRow(constr)
-        pids, coeffs = [], []
+        varnames, coeffs = [], []
         for i in range(expr.size()):
-            var = expr.getVar(i)
-            pid = self._gindex_to_pid[var.index]
-            pids.append(pid)
+            varnames.append(expr.getVar(i).VarName)
             coeffs.append(expr.getCoeff(i))
 
         sense = "<=" if constr.Sense == "<" else ">=" if constr.Sense == ">" else "=="
 
-        return ConstraintSchema(pids=pids, coeffs=coeffs, sense=sense, rhs=constr.RHS)
+        return ConstraintSchema(
+            varnames=varnames, coeffs=coeffs, sense=sense, rhs=constr.RHS
+        )
 
     def _deserialize_and_register_constraint(
         self,
@@ -1173,10 +1173,10 @@ class PathwayOptimizer:
         tag: str,
     ) -> gp.Constr:
         coeff_map = {
-            constr.pids[i]: constr.coeffs[i] for i, _ in enumerate(constr.pids)
+            constr.varnames[i]: constr.coeffs[i] for i, _ in enumerate(constr.varnames)
         }
         return self._register_constraint(
-            pids=constr.pids,
+            varnames=constr.varnames,
             coeff_map=coeff_map,
             sense=constr.sense,
             rhs=constr.rhs,
