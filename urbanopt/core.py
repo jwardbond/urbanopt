@@ -517,185 +517,130 @@ class PathwayOptimizer:
 
         return constrs1, constrs2
 
-    # def add_conversion_constraints(
-    #     self,
-    #     start_name: list[str],
-    #     sense: str,
-    #     limit: float,
-    #     check_overlaps: bool = False,
-    #     proj_crs: str | None = None,
-    #     debuff: float = 0,
-    #     tag: str | None = None,
-    # ) -> None:
-    #     """Fill in."""
+    def add_conversion_constraints(
+        self,
+        start_name: str,
+        sense: str,
+        limit: int,
+        check_overlaps: bool = False,
+        proj_crs: str | None = None,
+        debuff: float = 0,
+        tag: str | None = None,
+    ) -> None:
+        """Constrains the sum of pathways that start from a given start form.
 
-    #     # Checking arguments
-    #     if debuff < 0:
-    #         msg = "Value for parameter debuff must be >= 0."
-    #         raise ValueError(msg)
-    #     if debuff > 0 and not check_overlaps:
-    #         msg = "Specifying debuff without setting check_overlaps=True will not do anything"
-    #         warnings.warn(msg, stacklevel=2)
+        This method can be used to (e.g.) constrain the total number of pathways that start
+        from "sfh" to 10, indicating that only 10 sfh can be converted.
 
-    #     filtered = self.data[self.data["start"] == start_name].copy()
-    #     if len(filtered) < 1:
-    #         msg = f"No pathways start from {start_name}."
-    #         raise ValueError
+        If check_overlaps is True, the method attempts to count overlapping pathways
+        (potentially after a 'debuff') as a single unit in the sum. Otherwise,
+        it simply constrains the sum of individual selected pathways.
 
-    #     if proj_crs is not None:
-    #         filtered = filtered.to_crs(proj_crs)
-    #     elif not filtered.crs or filtered.crs.is_geographic:
-    #         msg = f"Data has a geographic crs ({filtered.crs}). Must provide projected CRS."
-    #         raise ValueError(msg)
+        The constraint is of the form:
+            sum(effective_pathways) [sense] limit
 
-    #     # Getting relevant pids
-    #     if check_overlaps:
-    #         filtered = filtered.buffer(debuff)
-    #         grph = PolyGraph.create_from_geoseries(
-    #             filtered.set_index("pid")["geometry"],
-    #         )
-    #         pids = grph.adj_list
-    #     else:
-    #         pids = {p: {} for p in filtered.pids}
+        Where 'effective_pathways' are individual pathways (x_pid) or
+        indicator variables (z_group) if check_overlaps is True.
 
-    #     # Loop through pid dict. If a pid has an overlap, the value will be a non-empty set.
-    #     # If the set is non-empty,
+        Args:
+            start_name (str): String from self.data["start] to filter on.
+            sense (str): One of "<=", ">=", or "==" for the constraint.
+            limit (int): The right-hand side value for the constraint.
+            check_overlaps (bool, optional): If True, attempts to identify and group
+                overlapping pathways. Defaults to False.
+            proj_crs (str | None, optional): A projected CRS to use for geometric
+                operations (buffer, overlap). Required if self.data CRS is geographic.
+                Defaults to None.
+            debuff (float, optional): A distance to shrink pathway geometries by before checking overlaps.
+                Requires check_overlaps=True. Value must be non-negative. Defaults to 0.
+            tag (str | None, optional): Optional tag for constraint tracking or removal. Defaults to None.
 
-    #     var_list = []
-    #     visited = set()
+        Returns:
+            gp.Constr | None: The Gurobi constraint object added to the model, or None
+                            if _register_constraint returns None.
 
-    #     for pid, overlap_set in pids.items():
-    #         if not overlap_set:  # just add the variable to the constraint
-    #             var_list.append(self._variables[pid])
-    #         elif overlap_set in visited: # We've already added an indicator variable for the set
-    #             pass
-    #         else: # Add the dummy indicator variable
-    #             suffix = "".join(str(i) for i in sorted(overlap_set))
-    #             z = self.model.addVar(
-    #                 vtype=gp.GRB.CONTINUOUS,
-    #                 lb=0.0,
-    #                 ub=1.0,
-    #                 name=f"z_{suffix}",
-    #             )
-    #             self._variables[f"z_{suffix}"] = z
+        Raises:
+            ValueError: If debuff is negative.
+            ValueError: If no pathways start from start_name.
+            ValueError: If data CRS is geographic and proj_crs is not provided.
+        """
+        # Checking arguments
+        if debuff < 0:
+            msg = "Value for parameter debuff must be >= 0."
+            raise ValueError(msg)
+        if debuff > 0 and not check_overlaps:
+            msg = "Specifying debuff without setting check_overlaps=True will not do anything"
+            warnings.warn(msg, stacklevel=2)
 
-    #             self._register_constraint(
-    #                 var_names = [],
-    #                 coeff_map = {},
+        filtered = self.data[self.data["start"] == start_name].copy()
+        if len(filtered) < 1:
+            msg = f"No pathways start from {start_name}."
+            raise ValueError(msg)
 
-    #             )
+        if proj_crs and not check_overlaps:
+            msg = "Specifying proj_crs without setting check_overlaps=True will not do anything"
+            warnings.warn(msg, stacklevel=2)
+        elif proj_crs:
+            filtered = filtered.to_crs(proj_crs)
 
-    #             var_list.append(z)
+        # Getting relevant pids
+        if check_overlaps:
+            filtered["geometry"] = filtered.buffer(-debuff)
 
-    #         else:  # Add a dummy indicator variable to the model and constraint
-    #             if overlaps
+            grph = PolyGraph.from_geoseries(
+                filtered.set_index("pid")["geometry"], predicate="intersects"
+            )
+            id_to_cc, cc_to_ids = grph.get_connected_components_map()
 
-    #             z = self.model.addVar(
-    #                 vtype=gp.GRB.CONTINUOUS,
-    #                 lb=0.0,
-    #                 ub=1.0,
-    #                 name=f"z_{i}",
-    #             )
-    #             self._variables[f"z_{i}"] = z
-    #             self._gindex_to_pid[z.index] = f"z_{i}"
-    #             self._pid_to_gindex[f"z_{i}"] = z.index
-    #             self.pids.append(f"z_{i}")
-    #             z_vars.append(z)
+            # every pid should be mapped to the set of its connected components
+            pids = {p: cc_to_ids[id_to_cc[p]] for p in list(filtered["pid"].unique())}
+        else:
+            pids = {p: {p} for p in list(filtered["pid"].unique())}
 
-    #             # OR constraints
-    #             for pid in row["pid_list"]:
-    #                 self._register_constraint(
-    #                     pids=[f"z_{i}", pid],
-    #                     coeff_map={f"z_{i}": 1.0, pid: -1.0},
-    #                     sense=">=",
-    #                     rhs=0.0,
-    #                     tag=tag,
-    #                     defer_update=True,
-    #                 )
+        var_list = []
+        visited = set()
 
-    #     return
+        for pid, overlap_set in pids.items():
+            # If the pathway doesn't overlap with anything, just add it by itself
+            if len(overlap_set) <= 1:
+                var_list.append(f"x_{pid}")
 
-    # # Filter out pathways with the same start
-    # # If check overlap
-    #     # Get overlaps for every polygon (spatial graph)
-    #     # Add dummy variables for every overlap
-    # if (len(labels) < 2) and labels_overlap:
-    #     msg = f"Provided {len(labels)} labels, there must be at least two labels for an overlap"
-    #     raise ValueError(msg)
+            # Otherwise we add an auxillary variable
+            elif overlap_set not in visited:
+                suffix = "".join(str(i) for i in sorted(overlap_set))
+                dummy_name = f"z_{suffix}"
+                z = self.model.addVar(vtype=gp.GRB.BINARY, name=dummy_name)
+                self._variables[dummy_name] = z
 
-    # if labels_overlap:
-    #     dfs = []
+                constr = self.model.addGenConstrOr(
+                    z, [self._variables[f"x_{p}"] for p in overlap_set]
+                )
 
-    #     # Get separate dfs for every label
-    #     for label in labels:
-    #         subset = self.data[self.data["label"] == label].copy()
-    #         subset[f"{label}_pid"]
-    #         dfs.append(subset)
+                dummy_tag = f"{tag}_dummy" if tag else "dummy"
+                self._constraints.setdefault(dummy_tag, []).append(constr)
 
-    #     # Find overlapping pathways between labels
-    #     joined = dfs[0]
-    #     for i in range(1, len(dfs)):
-    #         source = joined
+                var_list.append(dummy_name)
+                visited.add(frozenset(overlap_set))
 
-    #         target = dfs[i + 1]
-    #         target_label = labels[i + 1]
+                # for i in overlap_set:
+                #     self._register_constraint(
+                #         varnames=[dummy_name, f"x_{i}"],
+                #         coeff_map={dummy_name: 1, f"x_{i}": -1},
+                #         sense=">=",
+                #         rhs=0,
+                #         tag="dummies",
+                #         defer_update=True,
+                #     )
 
-    #         # Left join
-    #         joined = _sjoin_greatest_intersection(
-    #             source,
-    #             target,
-    #             [f"{target_label}_pid"],
-    #         )
+        coeff_map = {v: 1 for v in var_list}
 
-    #         # Create outer join
-    #         missing = target[
-    #             ~target[f"{target_label}_pid"].isin(joined[f"{target_label}_pid"])
-    #         ]
-
-    #         joined = pd.concat([joined, missing], ignore_index=True)
-
-    #     # Clean up
-    #     pid_cols = [col for col in joined.columns if col.endswith("_pid")]
-    #     joined["pid_list"] = joined[pid_cols].values.tolist()
-    #     joined = joined[joined["pid_list"].map(len) > 1]
-
-    #     # Create dummy indicator vars
-    #     z_vars = []
-    #     for i, row in joined.iterrows():
-    #         # Vars
-    #         z = self.model.addVar(
-    #             vtype=gp.GRB.CONTINUOUS,
-    #             lb=0.0,
-    #             ub=1.0,
-    #             name=f"z_{i}",
-    #         )
-    #         self._variables[f"z_{i}"] = z
-    #         self._gindex_to_pid[z.index] = f"z_{i}"
-    #         self._pid_to_gindex[f"z_{i}"] = z.index
-    #         self.pids.append(f"z_{i}")
-    #         z_vars.append(z)
-
-    #         # OR constraints
-    #         for pid in row["pid_list"]:
-    #             self._register_constraint(
-    #                 pids=[f"z_{i}", pid],
-    #                 coeff_map={f"z_{i}": 1.0, pid: -1.0},
-    #                 sense=">=",
-    #                 rhs=0.0,
-    #                 tag=tag,
-    #                 defer_update=True,
-    #             )
-
-    #         # Adding to objective
-    #         obj_expr = gp.quicksum(z for z in z_vars.values())
-    #         self.model.setObjective(self.model.getObjective() + obj_expr)
-
-    #     self._has_dummies = True
-
-    #     # Constructing final pid list
-    #     pids = (joined["pid_list"].map(len) > 2)
-
-    # else:
+        return self._register_constraint(
+            varnames=var_list,
+            coeff_map=coeff_map,
+            sense=sense,
+            rhs=limit,
+            tag=tag,
+        )
 
     def add_mutual_exclusion(
         self,
@@ -1025,12 +970,12 @@ class PathwayOptimizer:
                     print(f"  {col}: {weight}")
 
             print(f"\nVariables (first {max_vars}):")
-            for i, (pid, var) in enumerate(self._variables.items()):
+            for i, (varname, var) in enumerate(self._variables.items()):
                 if i >= max_vars:
                     print("  ... (truncated)")
                     break
                 print(
-                    f"  x_{pid}: {var.X if self.model.SolCount > 0 else 'not solved'}",
+                    f"  {varname}: {var.X if self.model.SolCount > 0 else 'not solved'}",
                 )
 
             print("\nConstraint Tags:")
