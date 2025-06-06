@@ -28,7 +28,7 @@ class PolyGraph:
         self.adj_list = adj_list
 
     @classmethod
-    def create_from_geoseries(
+    def from_geoseries(
         cls,
         gs: gpd.GeoSeries,
         predicate: str = "intersects",
@@ -58,8 +58,8 @@ class PolyGraph:
 
         return PolyGraph(adj_list=graph)
 
-    def create_connected_components_map(self) -> dict:
-        """Generates an {id: cc_id} map.
+    def get_connected_components_map(self) -> dict:
+        """Generates {id: cc_id} and {cc_id: {ids}} maps.
 
         cc_id is the connected component to which a given polygon id belongs.
 
@@ -68,16 +68,18 @@ class PolyGraph:
         """
         graph = self.adj_list
 
-        mapper = {}
+        id_to_cc = {}
+        cc_to_ids = {}
 
         group_id = 0
         for v in graph:
-            if v not in mapper:
-                connected_component = self.get_connected(v)
-                mapper.update(dict.fromkeys(connected_component, group_id))
+            if v not in id_to_cc:
+                connected_ids = self.get_connected(v)
+                id_to_cc.update(dict.fromkeys(connected_ids, group_id))
+                cc_to_ids[group_id] = connected_ids
                 group_id += 1
 
-        return mapper
+        return id_to_cc, cc_to_ids
 
     def get_connected(self, root: int) -> set[int]:
         """Given a root node, generates a list of connected nodes with DFS."""
