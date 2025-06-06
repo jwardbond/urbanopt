@@ -193,7 +193,9 @@ def test_add_opportunity_constraints_multiple_limits_and_boundaries(
 
 
 # FIXME these zone constraints are bad
-def test_zone_difference_constraints_creates_two_constraints(sample_gdf):
+def test_zone_difference_constraints_creates_two_constraints(
+    sample_gdf: gpd.GeoDataFrame,
+):
     """Ensure two MConstrs are returned per geometry pair."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -207,7 +209,10 @@ def test_zone_difference_constraints_creates_two_constraints(sample_gdf):
     limits = [10.0]
 
     constrs1, constrs2 = optimizer.add_zone_difference_constraints(
-        geom_pairs, sense="<=", limits=limits, tag="zone_diff"
+        geom_pairs,
+        sense="<=",
+        limits=limits,
+        tag="zone_diff",
     )
 
     assert isinstance(constrs1, gp.MConstr)
@@ -219,7 +224,7 @@ def test_zone_difference_constraints_creates_two_constraints(sample_gdf):
     assert "zone_diff_2" in optimizer._constraints
 
 
-def test_zone_difference_constraints_tags_are_correct(sample_gdf):
+def test_zone_difference_constraints_tags_are_correct(sample_gdf: gpd.GeoDataFrame):
     """Check that both MConstrs are stored under separate tags."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -241,7 +246,9 @@ def test_zone_difference_constraints_tags_are_correct(sample_gdf):
     assert len(optimizer._constraints["zd_test_2"]) == 1
 
 
-def test_zone_difference_constraints_handles_non_intersecting(sample_gdf):
+def test_zone_difference_constraints_handles_non_intersecting(
+    sample_gdf: gpd.GeoDataFrame,
+):
     """Ensure constraint still works when one of the zones has no intersecting geometry."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
@@ -259,6 +266,102 @@ def test_zone_difference_constraints_handles_non_intersecting(sample_gdf):
     assert isinstance(constrs2, gp.MConstr)
     assert constrs1.size == 1
     assert constrs2.size == 1
+
+
+class TestConversionConstraints:
+    def test_no_overlap(
+        self,
+        overlapping_pathways_gdf: gpd.GeoDataFrame,
+    ):
+        """Test a simple instance where we don't care about overlaps"""
+        input_gdf = overlapping_pathways_gdf
+        optimizer = PathwayOptimizer(input_gdf)
+        optimizer.build_variables()
+        optimizer.add_conversion_constraints(start_name="A", sense="<=", limit=1)
+
+        # Constraints should be added as untagged
+        assert "untagged" in optimizer._constraints
+        assert len(optimizer._constraints["untagged"]) == 1
+
+        # All pathways with start==A should be in the constraint
+        constr = optimizer._constraints["untagged"][0]
+        expr = optimizer.model.getRow(constr)
+        used_vars = {expr.getVar(i).VarName for i in range(expr.size())}
+        expected_vars = {
+            f"x_{pid}" for pid in input_gdf[input_gdf["start"] == "A"]["pid"]
+        }
+        assert used_vars == expected_vars
+
+        # The constraint should have the correct sense and rhs
+        assert constr.Sense == "<"
+        assert constr.RHS == 1.0
+
+    def test_with_overlaps(
+        self,
+        overlapping_pathways_gdf: gpd.GeoDataFrame,
+    ):
+        gdf = overlapping_pathways_gdf
+        optimizer = PathwayOptimizer(gdf)
+        optimizer.build_variables()
+        optimizer.add_conversion_constraints(
+            start_name="A",
+            sense="<=",
+            limit=1,
+            check_overlaps=True,
+            proj_crs="EPSG:3347",
+        )
+
+        # x_3 and z_12 and z_45 should be in the constraint
+        constr = optimizer._constraints["untagged"][0]
+        expr = optimizer.model.getRow(constr)
+        used_vars = {expr.getVar(i).VarName for i in range(expr.size())}
+        expected_vars = {"x_3", "z_12", "z_456"}
+        assert used_vars == expected_vars
+
+        # Dummy variables should be added
+        assert "z_12" in optimizer._variables
+        assert "z_456" in optimizer._variables
+
+        # Dummy constraints should be added
+        dummy_constraints = optimizer._constraints.get("dummy", [])
+        assert len(dummy_constraints) == 2
+
+    def test_invalid_start(self, mutual_exclusion_gdf: gpd.geodataframe):
+        gdf = mutual_exclusion_gdf
+        optimizer = PathwayOptimizer(gdf)
+        optimizer.build_variables()
+        with pytest.raises(ValueError, match="No pathways start from Z"):
+            optimizer.add_conversion_constraints(start_name="Z", sense="<=", limit=1)
+
+    def test_debuff_warning(self, mutual_exclusion_gdf: gpd.GeoDataFrame):
+        gdf = mutual_exclusion_gdf
+        optimizer = PathwayOptimizer(gdf)
+        optimizer.build_variables()
+        with pytest.warns(
+            UserWarning,
+            match="Specifying debuff without setting check_overlaps=True",
+        ):
+            optimizer.add_conversion_constraints(
+                start_name="A",
+                sense="<=",
+                limit=1,
+                debuff=0.1,
+            )
+
+    def test_tags(self, mutual_exclusion_gdf: gpd.GeoDataFrame):
+        gdf = mutual_exclusion_gdf
+        optimizer = PathwayOptimizer(gdf)
+        optimizer.build_variables()
+        optimizer.add_conversion_constraints(
+            start_name="A",
+            sense="<=",
+            limit=1,
+            tag="test_tag",
+        )
+        optimizer.model.update()
+
+        assert "test_tag" in optimizer._constraints
+        assert optimizer._constraints["test_tag"]
 
 
 def test_add_mutual_exclusion_creates_constraints(

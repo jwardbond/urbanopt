@@ -11,7 +11,7 @@ class TestPolyGraphIntersects:
         poly2 = shapely.Polygon([(1, 1), (3, 1), (3, 3), (1, 3)])
         poly3 = shapely.Polygon([(2, 2), (4, 2), (4, 4), (2, 4)])
         gs = gpd.GeoSeries([poly1, poly2, poly3])
-        graph = PolyGraph.create_from_geoseries(gs)
+        graph = PolyGraph.from_geoseries(gs)
         assert graph.adj_list[0] == {1, 2}
         assert graph.adj_list[1] == {0, 2}
         assert graph.adj_list[2] == {0, 1}
@@ -21,7 +21,7 @@ class TestPolyGraphIntersects:
         poly2 = shapely.Polygon([(1, 0), (2, 0), (2, 1), (1, 1)])
         poly3 = shapely.Polygon([(2, 1), (3, 1), (3, 2), (2, 2)])
         gs = gpd.GeoSeries([poly1, poly2, poly3])
-        graph = PolyGraph.create_from_geoseries(gs)
+        graph = PolyGraph.from_geoseries(gs)
         assert graph.adj_list[0] == {1}
         assert graph.adj_list[1] == {0, 2}
         assert graph.adj_list[2] == {1}
@@ -31,14 +31,14 @@ class TestPolyGraphIntersects:
         poly2 = shapely.Polygon([(2, 0), (4, 0), (4, 2), (2, 2)])
         poly3 = shapely.Polygon([(4, 0), (6, 0), (6, 2), (4, 2)])
         gs = gpd.GeoSeries([poly1, poly2, poly3])
-        graph = PolyGraph.create_from_geoseries(gs)
+        graph = PolyGraph.from_geoseries(gs)
         assert graph.adj_list[0] == {1}
         assert graph.adj_list[1] == {0, 2}
         assert graph.adj_list[2] == {1}
 
     def test_create_from_empty_geoseries(self):
         gs = gpd.GeoSeries([])
-        graph = PolyGraph.create_from_geoseries(gs)
+        graph = PolyGraph.from_geoseries(gs)
         assert graph.adj_list == {}
 
     def test_create_from_non_sequential_index(self):
@@ -46,7 +46,7 @@ class TestPolyGraphIntersects:
         poly2 = shapely.Polygon([(0.5, 0), (1.5, 0), (1.5, 1), (0.5, 1)])
         poly3 = shapely.Polygon([(2, 0), (3, 0), (3, 1), (2, 1)])
         gs = gpd.GeoSeries({0: poly1, 2: poly2, 3: poly3})
-        graph = PolyGraph.create_from_geoseries(gs)
+        graph = PolyGraph.from_geoseries(gs)
         assert set(graph.adj_list.keys()) == {0, 2, 3}
 
 
@@ -56,7 +56,7 @@ class TestPolyGraphOverlaps:
         poly2 = shapely.Polygon([(1, 1), (3, 1), (3, 3), (1, 3)])
         poly3 = shapely.Polygon([(2, 2), (4, 2), (4, 4), (2, 4)])
         gs = gpd.GeoSeries([poly1, poly2, poly3])
-        graph = PolyGraph.create_from_geoseries(gs, predicate="overlaps")
+        graph = PolyGraph.from_geoseries(gs, predicate="overlaps")
         assert graph.adj_list[0] == {1}
         assert graph.adj_list[1] == {0, 2}
         assert graph.adj_list[2] == {1}
@@ -66,7 +66,7 @@ class TestPolyGraphOverlaps:
         poly2 = shapely.Polygon([(1, 0), (2, 0), (2, 1), (1, 1)])
         poly3 = shapely.Polygon([(2, 1), (3, 1), (3, 2), (2, 2)])
         gs = gpd.GeoSeries([poly1, poly2, poly3])
-        graph = PolyGraph.create_from_geoseries(gs, predicate="overlaps")
+        graph = PolyGraph.from_geoseries(gs, predicate="overlaps")
         assert graph.adj_list[0] == set()
         assert graph.adj_list[1] == set()
         assert graph.adj_list[2] == set()
@@ -93,15 +93,27 @@ class TestCreateCCMap:
     def test_multiple_components_mapping(self):
         adj_list = {0: [1, 2], 1: [0, 2], 2: [0, 1], 3: [4], 4: [3]}
         pg = PolyGraph(adj_list)
+        id_to_cc, cc_to_ids = pg.get_connected_components_map()
+
         expected = {0: 0, 1: 0, 2: 0, 3: 1, 4: 1}
-        assert pg.create_connected_components_map() == expected
+
+        assert id_to_cc == expected
+
+        assert cc_to_ids[0] == {0, 1, 2}
+        assert cc_to_ids[1] == {3, 4}
 
     def test_empty_graph_mapping(self):
         pg = PolyGraph(adj_list={})
-        assert pg.create_connected_components_map() == {}
+        id_to_cc, cc_to_ids = pg.get_connected_components_map()
+        assert id_to_cc == {}
+        assert cc_to_ids == {}
 
     def test_isolated_nodes_mapping(self):
         adj_list = {0: [], 1: [], 2: []}
         pg = PolyGraph(adj_list)
+        id_to_cc, cc_to_ids = pg.get_connected_components_map()
         expected = {0: 0, 1: 1, 2: 2}
-        assert pg.create_connected_components_map() == expected
+        assert id_to_cc == expected
+        assert cc_to_ids[0] == {0}
+        assert cc_to_ids[1] == {1}
+        assert cc_to_ids[2] == {2}
