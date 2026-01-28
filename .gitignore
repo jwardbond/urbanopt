@@ -13,6 +13,7 @@ __pycache__/
 *$py.class
 
 # Distribution / packaging
+uv.lock
 .Python
 build/
 develop-eggs/

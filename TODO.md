@@ -1,6 +1,6 @@
 Must do
 - [x] Docstrings and documentation
-- [ ] Change opportunity to.... 
+- [x] Change opportunity to.... contribution
 - [ ] Readme
 - [ ] Example
 - [ ] Rename opportunity to capacity
