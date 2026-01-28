@@ -2,8 +2,6 @@
 
 ![urbanopt logo](static/logo_no_bg.png)
 
-# urbanopt
-
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/yourusername/urbanopt/releases)
 
 *Optimization framework for urban housing pathway selection*
