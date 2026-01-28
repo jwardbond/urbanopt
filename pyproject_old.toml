@@ -1,23 +1,17 @@
-[project]
-name = "urbanopt"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.12"
-dependencies = []
-
-
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-exclude = [
+lint.select = [
+    "ALL", # include all the rules, including new ones
+]
+
+lint.exclude = [
     ".bzr",
     ".direnv",
     ".eggs",
     ".git",
     ".git-rewrite",
     ".hg",
-    ".ipynb",
     ".ipynb_checkpoints",
     ".mypy_cache",
     ".nox",
@@ -42,20 +36,14 @@ exclude = [
     ".archive" 
 ]
 
-[tool.ruff.lint]
-pydocstyle.convention = "google"
-select = [
-    "ALL", # include all the rules, including new ones
-]
-
-ignore = [ 
+lint.ignore = [ 
     "S101",     # 'assert' keyword
     "E501",     # Docstring line too long
     "ANN202",   # Return type for private function
     "UP035",    # Callable from collections.abc
     "T201",     # Print statements
     "FBT001",   # Boolean arguments
-    "FBT002",   # Boolean argumentsW
+    "FBT002",   # Boolean arguments
     "PLR0913",  # Too many arguments
     "PLR2004",  # Magic values in comparisons
     "RET505",   # Unecessary else after returns 
@@ -63,6 +51,10 @@ ignore = [
     "FIX004",   # Line contains hack
     ]
 
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "ANN201", "PT", "SLF001"] # Docstrings etc.
-"download.py" = ["T201"] # Print statementsW
+"download.py" = ["T201"] # Print statements
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
