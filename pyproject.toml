@@ -4,8 +4,18 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "geopandas>=1.1.2",
+    "gurobipy>=13.0.1",
+    "pydantic>=2.12.5",
+    "scipy>=1.17.0",
+]
 
+[dependency-groups]
+dev = [
+    "jupyterlab>=4.5.3",
+    "pytest>=9.0.2",
+]
 
 [tool.ruff]
 line-length = 88
@@ -66,3 +76,4 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "ANN201", "PT", "SLF001"] # Docstrings etc.
 "download.py" = ["T201"] # Print statementsW
+
