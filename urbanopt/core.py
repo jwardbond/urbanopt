@@ -7,11 +7,12 @@ import geopandas as gpd
 import gurobipy as gp
 import numpy as np
 import pandas as pd
-from .polygraph import PolyGraph
 from pydantic import BaseModel
 from pyproj import Transformer
 from scipy.sparse import coo_matrix, csr_matrix
 from shapely.geometry import MultiPolygon, Point, Polygon
+
+from .polygraph import PolyGraph
 
 
 class ConstraintSchema(BaseModel):
@@ -24,7 +25,7 @@ class ConstraintSchema(BaseModel):
 
 
 class OptimizerConfigSchema(BaseModel):
-    """Schema for serializing a PathywayOptimizer Configuration."""
+    """Schema for serializing a PathwayOptimizer Configuration."""
 
     varnames: list[str]
     cost_columns: list[str]
@@ -74,7 +75,7 @@ class PathwayOptimizer:
         >>> optimizer = PathwayOptimizer(gdf)
         >>> optimizer.build_variables()
         >>> optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-        >>> optimizer.add_opportunity_constraints(5.0, tag="constraints")
+        >>> optimizer.add_opportunity_constraints(3.0, tag="constraints")
     """
 
     def __init__(self, gdf: gpd.GeoDataFrame) -> None:
@@ -191,7 +192,6 @@ class PathwayOptimizer:
         Creates one binary variable per pathway ID and stores them in self._variables.
         Also creates and stores the Gurobi model in self.model.
         """
-
         # Initialize variable tracking
         self._variables = {}
 
@@ -332,7 +332,7 @@ class PathwayOptimizer:
         self,
         limits: float | list[float],
         sense: str,
-        boundaries: None | Polygon | MultiPolygon | list = [None],
+        boundaries: None | Polygon | MultiPolygon | list = None,
         tag: str | None = None,
     ) -> gp.MConstr:
         """Add a constraint limiting the total opportunity within a given boundary (or boundaries).
@@ -353,6 +353,8 @@ class PathwayOptimizer:
             ValueError: If number of limits and boundaries do not match.
         """
         # Coerce inputs to lists
+        if boundaries is None:
+            boundaries = [None]
         if isinstance(limits, (float, int)):
             limits = [limits]
 
@@ -434,7 +436,7 @@ class PathwayOptimizer:
         limits: list[float],
         tag: str | None = None,
     ) -> tuple[gp.MConstr]:
-        """Contstrains the (absolute) difference in opportunity within two geometries within a given limit.
+        """Constrain the (absolute) difference in opportunity within two geometries within a given limit.
 
         For each pair of geometries (zone1, zone2), enforces:
             sum(opportunity in zone1) - sum(opportunity in zone2) <= limit
@@ -583,7 +585,7 @@ class PathwayOptimizer:
         elif proj_crs:
             filtered = filtered.to_crs(proj_crs)
 
-        # Getting relevant pids
+        # Get relevant pids
         if check_overlaps:
             filtered["geometry"] = filtered.buffer(-debuff)
 
@@ -736,48 +738,6 @@ class PathwayOptimizer:
             tag=tag,
         )
 
-    # FIXME needs to add by label
-    # def add_pathway_limit(
-    #     self,
-    #     start: str,
-    #     end: str,
-    #     max_count: float,
-    #     boundary: Polygon | MultiPolygon | None = None,
-    #     tag: str | None = None,
-    # ) -> gp.Constr:
-    #     """Add a constraint limiting the number of selected pathways of a specific type.
-
-    #     Args:
-    #         start: Start point/area identifier.
-    #         end: End point/area identifier.
-    #         max_count: Maximum number of pathways that can be selected.
-    #         boundary: Optional shapely polygon or multipolygon to filter pathways. Only pathways
-    #                  that intersect with this boundary will be included in the constraint.
-    #         tag: Optional tag for constraint tracking/removal.
-
-    #     Returns:
-    #         The created Gurobi constraint object.
-    #     """
-    #     # TODO refactor to take labels
-    #     # Filter pathways by start/end
-    #     mask = (self.data["start"] == start) & (self.data["end"] == end)
-
-    #     # Apply boundary filter if provided
-    #     if boundary is not None:
-    #         mask = mask & self.data.geometry.intersects(boundary)
-
-    #     filtered_pids = self.data[mask]["pid"].tolist()
-
-    #     coeff_map = dict.fromkeys(filtered_pids, 1.0)
-
-    #     return self._register_constraint(
-    #         pids=filtered_pids,
-    #         coeff_map=coeff_map,
-    #         sense="<=",
-    #         rhs=max_count,
-    #         tag=tag,
-    #     )
-
     def add_max_opportunity_near_point(
         self,
         limit: float,
@@ -853,7 +813,7 @@ class PathwayOptimizer:
         # Update model to reflect changes
         self.model.update()
 
-    def solve(self, verbose: bool = False) -> None:
+    def solve(self, verbose: bool = False, logfile: str | None = None) -> None:
         """Solve the optimization model.
 
         This method optimizes the model with the current objective and constraints.
@@ -863,15 +823,18 @@ class PathwayOptimizer:
         Args:
             verbose: If True, prints a summary of the solution after solving.
                     Defaults to False.
+            logfile: (str | None, optional) path to a file to log Gurobi output. Defaults to None.
 
         Raises:
             RuntimeError: If the model is infeasible, unbounded, or fails to solve
                         for any other reason.
         """
-        if verbose:
-            self.model.setParam("OutputFlag", 1)
-        else:
-            self.model.setParam("OutputFlag", 0)
+        if not verbose:
+            self.model.setParam("LogToConsole", 0)
+        if logfile:
+            logpath = Path(logfile)
+            logpath.parent.mkdir(parents=True, exist_ok=True)
+            self.model.setParam("LogFile", str(logpath))
 
         self.model.optimize()
         self.model.update()
@@ -1100,6 +1063,14 @@ class PathwayOptimizer:
         return constrs
 
     def _serialize_constraint(self, constr: gp.Constr) -> ConstraintSchema:
+        """Serialize a Gurobi constraint into a schema.
+
+        Args:
+            constr: The Gurobi constraint to serialize.
+
+        Returns:
+            ConstraintSchema: The serialized constraint data.
+        """
         expr = self.model.getRow(constr)
         varnames, coeffs = [], []
         for i in range(expr.size()):
@@ -1117,6 +1088,15 @@ class PathwayOptimizer:
         constr: ConstraintSchema,
         tag: str,
     ) -> gp.Constr:
+        """Deserialize and register a constraint from a schema.
+
+        Args:
+            constr: The constraint schema to deserialize.
+            tag: The tag to associate with the constraint.
+
+        Returns:
+            gp.Constr: The registered Gurobi constraint.
+        """
         coeff_map = {
             constr.varnames[i]: constr.coeffs[i] for i, _ in enumerate(constr.varnames)
         }
@@ -1155,8 +1135,8 @@ def _sjoin_greatest_intersection(
     From https://pysal.org/tobler/_modules/tobler/area_weighted/area_join.html#area_join
 
     Args:
-        source_df (geopandas.GeoDataFrame): GeoDataFrame containing source values.
         target_df (geopandas.GeoDataFrame): GeoDataFrame containing target values.
+        source_df (geopandas.GeoDataFrame): GeoDataFrame containing source values.
         variables (str or list-like): Column(s) in `source_df` dataframe for variable(s) to be joined.
 
     Returns:
