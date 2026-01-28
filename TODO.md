@@ -1,11 +1,14 @@
 Must do
 - [x] Docstrings and documentation
 - [x] Change opportunity to.... contribution
-- [ ] Readme
-- [ ] Example
-- [ ] Rename opportunity to capacity
+- [x] Create readme
+- [ ] Change "pathway optimizer" to something else
+- [ ] Make example (data + notebook)
+- [ ] Update "coming soon" in readme
+- [ ] Host docs
+- [ ] Add getting started section to docs
 
 Would like to do
-- [ ] Fix linter errors
+- [x] Fix linter errors
 - [ ] Publish on pypi
-- [ ] Fill out tests
+- [x] Fill out tests
