@@ -52,3 +52,29 @@ def mutual_exclusion_gdf():
         ],
     }
     return gpd.GeoDataFrame(data, crs="EPSG:4326")
+
+
+@pytest.fixture
+def overlapping_pathways_gdf():
+    gdf = gpd.GeoDataFrame(
+        {
+            "pid": [1, 2, 3, 4, 5, 6],
+            "label": ["type1", "type1", "type2", "type3", "type3", "type4"],
+            "start": ["A"] * 6,
+            "end": ["X", "X", "Y", "Z", "Z", "Z"],
+            "desc": ["path 1", "path 2", "path 3", "path 4", "path 5", "path 6"],
+            "opportunity": [10, 20, 30, 40, 50, 60],
+            "geometry": [
+                Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),  # overlaps with 2
+                Polygon([(1, 1), (3, 1), (3, 3), (1, 3)]),  # overlaps with 1
+                Polygon([(5, 5), (6, 5), (6, 6), (5, 6)]),  # no overlap
+                Polygon([(10, 10), (12, 10), (12, 12), (10, 12)]),  # overlaps with 5
+                Polygon(
+                    [(11, 11), (13, 11), (13, 13), (11, 13)]
+                ),  # overlaps with 4 and 6
+                Polygon([(12, 12), (14, 12), (14, 14), (12, 14)]),  # overlaps with 5
+            ],
+        },
+        crs="EPSG:3347",
+    )
+    return gdf.to_crs("EPSG:4326")

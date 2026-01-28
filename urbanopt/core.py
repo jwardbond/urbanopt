@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 from pyproj import Transformer
-from scipy.sparse import coo_matrix, csr_matrix
+from scipy.sparse import coo_matrix, csr_array
 from shapely.geometry import MultiPolygon, Point, Polygon
 
 from .polygraph import PolyGraph
@@ -120,7 +120,7 @@ class PathwayOptimizer:
         self.data = gdf.copy()
 
         # Store CRS
-        self.crs = gdf.crs
+        self.crs = str(gdf.crs)
 
         # Store list of pathway IDs
         self.pids = gdf["pid"].tolist()
@@ -193,7 +193,7 @@ class PathwayOptimizer:
         Also creates and stores the Gurobi model in self.model.
         """
         # Initialize variable tracking
-        self._variables = {}
+        self._variables: dict[str, gp.Var] = {}
 
         # Initialize index mapping dictionaries
         self._gindex_to_pid = {}
@@ -414,7 +414,8 @@ class PathwayOptimizer:
             data.append(opportunity_map[pid])
 
         coeffs = coo_matrix(
-            (data, (row_indices, col_indices)), shape=(len(limits), len(filtered_pids))
+            (data, (row_indices, col_indices)),
+            shape=(len(limits), len(filtered_pids)),
         ).tocsr()
 
         rhs_array = np.array(limits)
@@ -495,7 +496,8 @@ class PathwayOptimizer:
         values = combined["coeff"].to_list()
 
         coeffs = coo_matrix(
-            (values, (row_indices, col_indices)), shape=(len(limits), len(pid_set))
+            (values, (row_indices, col_indices)),
+            shape=(len(limits), len(pid_set)),
         ).tocsr()
 
         rhs_array = np.array(limits, dtype=float)
@@ -589,7 +591,8 @@ class PathwayOptimizer:
             filtered["geometry"] = filtered.buffer(-debuff)
 
             grph = PolyGraph.from_geoseries(
-                filtered.set_index("pid")["geometry"], predicate="intersects"
+                filtered.set_index("pid")["geometry"],  # type: ignore[arg-type]
+                predicate="intersects",
             )
             id_to_cc, cc_to_ids = grph.get_connected_components_map()
 
@@ -598,7 +601,7 @@ class PathwayOptimizer:
         else:
             pids = {p: {p} for p in list(filtered["pid"].unique())}
 
-        var_list = []
+        var_list: list[str] = []
         visited = set()
 
         for pid, overlap_set in pids.items():
@@ -614,7 +617,8 @@ class PathwayOptimizer:
                 self._variables[dummy_name] = z
 
                 constr = self.model.addGenConstrOr(
-                    z, [self._variables[f"x_{p}"] for p in overlap_set]
+                    z,
+                    [self._variables[f"x_{p}"] for p in overlap_set],
                 )
 
                 dummy_tag = f"{tag}_dummy" if tag else "dummy"
@@ -623,17 +627,7 @@ class PathwayOptimizer:
                 var_list.append(dummy_name)
                 visited.add(frozenset(overlap_set))
 
-                # for i in overlap_set:
-                #     self._register_constraint(
-                #         varnames=[dummy_name, f"x_{i}"],
-                #         coeff_map={dummy_name: 1, f"x_{i}": -1},
-                #         sense=">=",
-                #         rhs=0,
-                #         tag="dummies",
-                #         defer_update=True,
-                #     )
-
-        coeff_map = {v: 1 for v in var_list}
+        coeff_map = dict.fromkeys(var_list, 1.0)
 
         return self._register_constraint(
             varnames=var_list,
@@ -664,19 +658,17 @@ class PathwayOptimizer:
         Returns:
             gp.MConstr | None: Gurobi matrix constraint object, or None if no exclusions found.
         """
-        constraints = []
-
         label1_paths = self.data[self.data["label"] == label1].copy()
         if label1_paths.empty:
-            return constraints
+            return None
 
-        if label2 is None:
+        if label2 is None:  # i.e., Exclusive with all
             other_paths = self.data[self.data["label"] != label1].copy()
         else:
             other_paths = self.data[self.data["label"] == label2].copy()
 
         if other_paths.empty:
-            return constraints
+            return None
 
         # Perform spatial join: find intersecting geometry pairs
         joined = gpd.sjoin(
@@ -887,7 +879,7 @@ class PathwayOptimizer:
 
         # Build the full schema
         config = OptimizerConfigSchema(
-            varnames=self._variables.keys(),
+            varnames=list(self._variables.keys()),
             cost_columns=self.cost_columns,
             objective=self._objective_weights
             if self._objective_weights
@@ -1013,7 +1005,7 @@ class PathwayOptimizer:
     def _register_matrix_constraint(
         self,
         varnames: list[str],
-        coeffs: csr_matrix,
+        coeffs: csr_array,
         sense: str,  # "<=", ">=", "=="
         rhs: np.ndarray,
         tag: str | None = None,
@@ -1052,7 +1044,7 @@ class PathwayOptimizer:
 
         x = [self._variables[vn] for vn in varnames]
 
-        constrs = self.model.addMConstr(coeffs, x, sense, rhs)
+        constrs = self.model.addMConstr(coeffs, x, sense, rhs)  # type: ignore[attr-defined]
 
         self._constraints.setdefault(tag or "untagged", []).extend(constrs.tolist())
 
@@ -1079,7 +1071,10 @@ class PathwayOptimizer:
         sense = "<=" if constr.Sense == "<" else ">=" if constr.Sense == ">" else "=="
 
         return ConstraintSchema(
-            varnames=varnames, coeffs=coeffs, sense=sense, rhs=constr.RHS
+            varnames=varnames,
+            coeffs=coeffs,
+            sense=sense,
+            rhs=constr.RHS,
         )
 
     def _deserialize_and_register_constraint(
@@ -1143,7 +1138,7 @@ def _sjoin_greatest_intersection(
 
     """
     if not pd.api.types.is_list_like(variables):
-        variables = [variables]
+        variables = [variables]  # type: ignore[assignment]
 
     for v in variables:
         if v in target_df.columns:
@@ -1176,7 +1171,7 @@ def _sjoin_greatest_intersection(
         arr = np.empty(len(main), dtype=object)
         arr[mask] = source_df[v].to_numpy()[main[mask].astype(int)]
         try:
-            arr = arr.astype(source_df[v].dtype)
+            arr = arr.astype(source_df[v].dtype)  # type: ignore[assignment]
         except TypeError:
             warnings.warn(
                 f"Cannot preserve dtype of '{v}'. Falling back to `dtype=object`.",
