@@ -60,24 +60,32 @@ class PathwayOptimizer:
         _has_dummies (bool): True if dummy "z" variables have been added to the problem (e.g. via add_conversion_constraints)
     -->
 
-    Example:
-        >>> import geopandas as gpd
-        >>> from shapely.geometry import Point
-        >>> data = {
-        ...     "pid": [1, 2, 3],
-        ...     "start": ["A", "B", "C"],
-        ...     "end": ["X", "Y", "Z"],
-        ...     "desc": ["desc1", "desc2", "desc3"],
-        ...     "contribution": [1.0, 2.0, 3.0],
-        ...     "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
-        ...     "cost_emb": [10, 20, 30],
-        ...     "cost_transit": [5, 15, 25]
-        ... }
-        >>> gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
-        >>> optimizer = PathwayOptimizer(gdf)
-        >>> optimizer.build_variables()
-        >>> optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-        >>> optimizer.add_contribution_constraints(3.0, tag="constraints")
+    Examples:
+            Basic usage with a GeoDataFrame:
+
+            ```python
+            import geopandas as gpd
+            from shapely.geometry import Point
+
+            # Setup dummy data
+            data = {
+                "pid": [1, 2, 3],
+                "start": ["A", "B", "C"],
+                "end": ["X", "Y", "Z"],
+                "desc": ["desc1", "desc2", "desc3"],
+                "contribution": [1.0, 2.0, 3.0],
+                "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+                "cost_emb": [10, 20, 30],
+                "cost_transit": [5, 15, 25]
+            }
+            gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
+
+            # Initialize and run optimizer
+            optimizer = PathwayOptimizer(gdf)
+            optimizer.build_variables()
+            optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
+            optimizer.add_contribution_constraints(3.0, tag="constraints")
+            ```
     """
 
     def __init__(self, gdf: gpd.GeoDataFrame) -> None:
