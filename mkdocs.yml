@@ -1,0 +1,20 @@
+site_name: UrbanOPT Documentation
+
+theme: 
+  name: material
+  palette:
+    primary: 'red'
+    accent: 'light blue'
+  font:
+    text: 'Roboto'
+    code: 'Roboto Mono'
+
+plugins: 
+  - mkdocstrings
+  
+nav: 
+  - Getting Started: index.md
+  - Tutorials:
+      - Tutorial 1: tutorial_1.md
+      - Tutorial 2: tutorial_2.md
+  - API Reference: api_reference.md

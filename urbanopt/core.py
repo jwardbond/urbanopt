@@ -48,6 +48,7 @@ class PathwayOptimizer:
         cost_columns (list[str]): List of cost-related column names.
         model (gp.Model): Gurobi optimization model (initialized by build_variables).
 
+    <!--
     Internal Attributes:
         _variables (dict[str, gp.Var]): Dictionary mapping variable names to Gurobi variables.
             (initialized by build_variables).
@@ -57,6 +58,7 @@ class PathwayOptimizer:
         _objective_weights (dict[str, float]): Dictionary mapping cost column names to their weights
             in the objective function.
         _has_dummies (bool): True if dummy "z" variables have been added to the problem (e.g. via add_conversion_constraints)
+    -->
 
     Example:
         >>> import geopandas as gpd
@@ -258,7 +260,7 @@ class PathwayOptimizer:
         """Get the list of selected pathway IDs from the solved model.
 
         Returns:
-            List of pathway IDs that were selected (variable value = 1).
+            A list of pathway IDs that were selected (variable value = 1)
 
         Raises:
             RuntimeError: If the model has not been solved yet.
@@ -280,11 +282,12 @@ class PathwayOptimizer:
         """Get a summary of the optimization results.
 
         Returns:
-            Dictionary containing:
-                - objective_value: The final objective value
-                - total_opportunity: Sum of opportunity for selected pathways
-                - solve_time: Time taken to solve the model (seconds)
-                - selected_count: Number of selected pathways
+            dict: Dictionary containing the results with the following keys:
+
+                * **objective_value** (float): The final objective value.
+                * **total_opportunity** (float): Sum of opportunity for selected pathways.
+                * **solve_time** (float): Time taken to solve the model (seconds).
+                * **selected_count** (int): Number of selected pathways.
 
         Raises:
             RuntimeError: If the model has not been solved yet.
@@ -346,7 +349,7 @@ class PathwayOptimizer:
             tag (str | None, optional): Optional tag for constraint tracking or removal.
 
         Returns:
-            gp.MConstr: Matrix constraint object.
+            A Gurobi matrix constraint object
 
         Raises:
             TypeError: If boundaries are not valid geometry types.
@@ -450,7 +453,7 @@ class PathwayOptimizer:
             tag (str | None, optional): Optional tag for constraint tracking or removal.
 
         Returns:
-            tuple[gp.MConstr, gp.MConstr]: Two Gurobi matrix constraint objects for the absolute difference.
+            Two Gurobi matrix constraint objects for the absolute difference.
 
         Raises:
             ValueError: If geom_pairs and limits are not the same length.
@@ -560,7 +563,7 @@ class PathwayOptimizer:
             tag (str | None, optional): Optional tag for constraint tracking or removal. Defaults to None.
 
         Returns:
-            gp.Constr: The Gurobi constraint object added to the model.
+            The Gurobi constraint object added to the model.
 
         Raises:
             ValueError: If debuff is negative.
@@ -656,7 +659,7 @@ class PathwayOptimizer:
             tag: Optional tag for constraint tracking/removal.
 
         Returns:
-            gp.MConstr | None: Gurobi matrix constraint object, or None if no exclusions found.
+            Gurobi matrix constraint object, or None if no overlaps are found
         """
         label1_paths = self.data[self.data["label"] == label1].copy()
         if label1_paths.empty:
@@ -893,16 +896,14 @@ class PathwayOptimizer:
         """Print debug information about the current state of the model.
 
         Prints basic model information including number of variables,
-        constraints, and model status.
+        constraints, and model status. If the model has been solved, also
+        includes variable values.
 
         Args:
             verbose: If True, prints additional details about variables
                     and constraints. Defaults to False.
             max_vars: Maximum number of variables to print in verbose mode.
                      Defaults to 20.
-
-        Note:
-            Variable values are only shown if the model has been solved.
         """
         # Calculate total constraints by handling both single constraints and MConstraints
         total_constraints = sum(
@@ -945,11 +946,6 @@ class PathwayOptimizer:
             path: Base path for the output file (without extension).
                  The .lp extension will be added automatically.
                  Can be either a relative or absolute path.
-
-        Note:
-            The .lp format is a human-readable representation of the
-            optimization model, showing all variables, constraints,
-            and the objective function.
         """
         self.model.write(str(Path(path).with_suffix(".lp")))
         print(f"Model written to: {path}.lp")
@@ -976,7 +972,7 @@ class PathwayOptimizer:
             defer_update: If False, calls model.update() before exiting. Defaults to False.
 
         Returns:
-            The created Gurobi constraint object.
+            The Gurobi constraint object.
 
         Raises:
             ValueError: If sense is not one of "<=", ">=", or "==".
@@ -1026,7 +1022,7 @@ class PathwayOptimizer:
             defer_update: If False, calls model.update() before exiting. Defaults to False.
 
         Returns:
-            gp.MConstr: The created Gurobi matrix constraint object.
+            The Gurobi matrix constraint object.
 
         Raises:
             ValueError: If sense is not one of "<=", ">=", or "==".
@@ -1060,7 +1056,7 @@ class PathwayOptimizer:
             constr: The Gurobi constraint to serialize.
 
         Returns:
-            ConstraintSchema: The serialized constraint data.
+            The serialized constraint data.
         """
         expr = self.model.getRow(constr)
         varnames, coeffs = [], []
@@ -1089,7 +1085,7 @@ class PathwayOptimizer:
             tag: The tag to associate with the constraint.
 
         Returns:
-            gp.Constr: The registered Gurobi constraint.
+            The registered Gurobi constraint.
         """
         coeff_map = {
             constr.varnames[i]: constr.coeffs[i] for i, _ in enumerate(constr.varnames)
