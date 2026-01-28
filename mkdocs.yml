@@ -3,11 +3,18 @@ site_name: UrbanOPT Documentation
 theme: 
   name: material
   palette:
-    primary: 'red'
-    accent: 'light blue'
-  font:
-    text: 'Roboto'
-    code: 'Roboto Mono'
+  - scheme: default
+    primary: blue-grey
+    accent: green
+    toggle:
+      icon: material/brightness-7 
+      name: Switch to dark mode
+  - scheme: slate
+    primary: blue-grey
+    accent: green
+    toggle:
+      icon: material/brightness-4
+      name: Switch to light mode
 
 plugins: 
   - mkdocstrings
