@@ -9,13 +9,13 @@ from urbanopt import PathwayOptimizer
 from urbanopt.core import _reproject_point
 
 
-def test_add_opportunity_constraints_global(sample_gdf: gpd.GeoDataFrame):
-    """Test that global opportunity constraint includes all pathways in a matrix constraint."""
+def test_add_contribution_constraints_global(sample_gdf: gpd.GeoDataFrame):
+    """Test that global contribution constraint includes all pathways in a matrix constraint."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     limit = 4.0
 
-    constraints = optimizer.add_opportunity_constraints(
+    constraints = optimizer.add_contribution_constraints(
         limit,
         sense="<=",
     )
@@ -45,17 +45,17 @@ def test_add_opportunity_constraints_global(sample_gdf: gpd.GeoDataFrame):
         ("==", "="),
     ],
 )
-def test_add_opportunity_constraints_correct_sense(
+def test_add_contribution_constraints_correct_sense(
     sample_gdf: gpd.GeoDataFrame, sense_input, expected_sense
 ):
-    """Test that opportunity constraints are initialized with correct senses ("<=", ">=", "==")."""
+    """Test that contribution constraints are initialized with correct senses ("<=", ">=", "==")."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
     limit = 4.0
     boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
 
-    constraints = optimizer.add_opportunity_constraints(
+    constraints = optimizer.add_contribution_constraints(
         limit,
         sense=sense_input,
         boundaries=boundary,
@@ -83,18 +83,18 @@ def test_add_opportunity_constraints_correct_sense(
         ),
     ],
 )
-def test_add_opportunity_constraints_geom_boundary(
+def test_add_contribution_constraints_geom_boundary(
     sample_gdf: gpd.GeoDataFrame,
     boundary: Polygon | MultiPolygon,
     expected_pids: list[int],
 ):
-    """Test that opportunity constraint correctly filters different sets of PIDs for Polygon vs MultiPolygon."""
+    """Test that contribution constraint correctly filters different sets of PIDs for Polygon vs MultiPolygon."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
     limit = 10.0
 
-    constraints = optimizer.add_opportunity_constraints(
+    constraints = optimizer.add_contribution_constraints(
         limit, sense="<=", boundaries=boundary
     )
     optimizer.model.update()
@@ -113,8 +113,8 @@ def test_add_opportunity_constraints_geom_boundary(
     assert used_indices == expected_indices
 
 
-def test_add_opportunity_constraints_handles_tags(sample_gdf: gpd.GeoDataFrame):
-    """Test that opportunity constraints are correctly tagged."""
+def test_add_contribution_constraints_handles_tags(sample_gdf: gpd.GeoDataFrame):
+    """Test that contribution constraints are correctly tagged."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
 
@@ -122,10 +122,10 @@ def test_add_opportunity_constraints_handles_tags(sample_gdf: gpd.GeoDataFrame):
     limit2 = 5.0
     boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
 
-    c1 = optimizer.add_opportunity_constraints(
+    c1 = optimizer.add_contribution_constraints(
         limit1, sense="<=", boundaries=boundary, tag="test_tag"
     )
-    c2 = optimizer.add_opportunity_constraints(
+    c2 = optimizer.add_contribution_constraints(
         limit2, sense="<=", boundaries=boundary, tag="test_tag"
     )
 
@@ -145,7 +145,7 @@ def test_add_opportunity_constraints_handles_tags(sample_gdf: gpd.GeoDataFrame):
         assert constr in stored_constraints
 
 
-def test_add_opportunity_constraints_multiple_limits_and_boundaries(
+def test_add_contribution_constraints_multiple_limits_and_boundaries(
     sample_gdf: gpd.GeoDataFrame,
 ):
     """Test that multiple limits and boundaries create a matrix constraint with correct rows and columns."""
@@ -158,7 +158,7 @@ def test_add_opportunity_constraints_multiple_limits_and_boundaries(
         Polygon([(2, 2), (3, 2), (3, 3), (2, 3)]),  # Should intersect PID 3
     ]
 
-    constraints = optimizer.add_opportunity_constraints(
+    constraints = optimizer.add_contribution_constraints(
         limits,
         sense="<=",
         boundaries=boundaries,
@@ -450,10 +450,10 @@ def test_add_mutual_exclusion_handles_single_label(
     assert used_indices == expected_indices
 
 
-def test_add_max_opportunity_near_point_filters_by_distance(
+def test_add_max_contribution_near_point_filters_by_distance(
     sample_gdf: gpd.GeoDataFrame,
 ):
-    """Test that max opportunity near point constraint correctly filters by distance."""
+    """Test that max contribution near point constraint correctly filters by distance."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     limit = 4.0
@@ -461,7 +461,7 @@ def test_add_max_opportunity_near_point_filters_by_distance(
     distance = 0.7  # Should catch points within sqrt(0.5) of center
     proj_crs = "EPSG:3347"  # Canada Lambert Conformal Conic
 
-    constraint = optimizer.add_max_opportunity_near_point(
+    constraint = optimizer.add_max_contribution_near_point(
         limit,
         point,
         distance,
@@ -488,8 +488,8 @@ def test_add_max_opportunity_near_point_filters_by_distance(
     assert used_indices == expected_indices
 
 
-def test_add_max_opportunity_near_point_validates_crs(sample_gdf: gpd.GeoDataFrame):
-    """Test that max opportunity near point constraint validates CRS."""
+def test_add_max_contribution_near_point_validates_crs(sample_gdf: gpd.GeoDataFrame):
+    """Test that max contribution near point constraint validates CRS."""
     # Set geographic CRS
     sample_gdf = sample_gdf.set_crs("EPSG:4326")
     optimizer = PathwayOptimizer(sample_gdf)
@@ -499,10 +499,10 @@ def test_add_max_opportunity_near_point_validates_crs(sample_gdf: gpd.GeoDataFra
 
     # Should raise error if no CRS provided with geographic data
     with pytest.raises(ValueError, match="Must provide projected CRS"):
-        optimizer.add_max_opportunity_near_point(4.0, point, distance)
+        optimizer.add_max_contribution_near_point(4.0, point, distance)
 
     # Should work with projected CRS provided
-    constraint = optimizer.add_max_opportunity_near_point(
+    constraint = optimizer.add_max_contribution_near_point(
         4.0,
         point,
         distance,
@@ -565,13 +565,13 @@ def test_remove_constraints_removes_by_tag(sample_gdf: gpd.GeoDataFrame):
     boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
 
     # Add constraints with different tags
-    c1 = optimizer.add_opportunity_constraints(
+    c1 = optimizer.add_contribution_constraints(
         5.0, "<=", boundaries=boundary, tag="test_tag"
     )
-    c2 = optimizer.add_opportunity_constraints(
+    c2 = optimizer.add_contribution_constraints(
         2.0, ">=", boundaries=boundary, tag="test_tag"
     )
-    c3 = optimizer.add_opportunity_constraints(
+    c3 = optimizer.add_contribution_constraints(
         3.0, "<=", boundaries=boundary, tag="other_tag"
     )
 
@@ -601,7 +601,7 @@ def test_remove_constraints_invalid_tag(sample_gdf: gpd.GeoDataFrame):
     """Test that removing constraints with invalid tag raises error."""
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
-    optimizer.add_opportunity_constraints(5.0, "<=", tag="test_tag")
+    optimizer.add_contribution_constraints(5.0, "<=", tag="test_tag")
 
     # Should raise error for non-existent tag
     with pytest.raises(ValueError) as exc_info:

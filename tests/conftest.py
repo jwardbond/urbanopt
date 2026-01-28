@@ -12,7 +12,7 @@ def sample_gdf():
         "start": ["A", "B", "C"],
         "end": ["X", "Y", "Z"],
         "desc": ["desc1", "desc2", "desc3"],
-        "opportunity": [1.0, 2.0, 3.0],
+        "contribution": [1.0, 2.0, 3.0],
         "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
         "cost_emb": [10, 20, 30],
         "cost_transit": [5, 15, 25],
@@ -37,7 +37,7 @@ def mutual_exclusion_gdf():
         "start": ["A", "A", "B", "B", "C", "D", "E"],
         "end": ["X", "X", "Y", "Y", "Z", "W", "V"],
         "desc": [f"d{i}" for i in range(1, 8)],
-        "opportunity": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        "contribution": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
         "geometry": [
             # Group 1: adu pathways (pids 1,2)
             Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),  # int w. 3
@@ -63,7 +63,7 @@ def overlapping_pathways_gdf():
             "start": ["A"] * 6,
             "end": ["X", "X", "Y", "Z", "Z", "Z"],
             "desc": ["path 1", "path 2", "path 3", "path 4", "path 5", "path 6"],
-            "opportunity": [10, 20, 30, 40, 50, 60],
+            "contribution": [10, 20, 30, 40, 50, 60],
             "geometry": [
                 Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),  # overlaps with 2
                 Polygon([(1, 1), (3, 1), (3, 3), (1, 3)]),  # overlaps with 1

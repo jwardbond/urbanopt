@@ -12,7 +12,7 @@ def test_print_solution_summary_after_solve(sample_gdf: gpd.GeoDataFrame, capsys
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
-    optimizer.add_opportunity_constraints(2.0, ">=")
+    optimizer.add_contribution_constraints(2.0, ">=")
     optimizer.solve()
 
     optimizer.print_solution_summary()
@@ -21,7 +21,7 @@ def test_print_solution_summary_after_solve(sample_gdf: gpd.GeoDataFrame, capsys
     # Should print all required information
     assert "Optimization Summary" in captured.out
     assert "Objective Value" in captured.out
-    assert "Total Opportunity" in captured.out
+    assert "Total Contribution" in captured.out
     assert "Solve Time" in captured.out
     assert "Selected Pathways" in captured.out
 
@@ -41,7 +41,7 @@ def test_debug_model_basic_info(sample_gdf: gpd.GeoDataFrame, capsys):
     optimizer.build_variables()
 
     # Add a single constraint
-    optimizer.add_opportunity_constraints(5.0, sense="<=", tag="single")
+    optimizer.add_contribution_constraints(5.0, sense="<=", tag="single")
 
     # Add matrix constraints (mutual exclusion creates matrix constraints)
     optimizer.add_mutual_exclusion("A", "B", tag="matrix")
@@ -73,7 +73,7 @@ def test_debug_model_verbose(sample_gdf: gpd.GeoDataFrame, capsys):
     optimizer.build_variables()
 
     # Add a single constraint
-    optimizer.add_opportunity_constraints(5.0, sense="<=", tag="single")
+    optimizer.add_contribution_constraints(5.0, sense="<=", tag="single")
 
     # Add matrix constraints
     optimizer.add_mutual_exclusion("A", "B", tag="matrix")
@@ -102,7 +102,7 @@ def test_export_model(sample_gdf: gpd.GeoDataFrame):
     optimizer = PathwayOptimizer(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
-    optimizer.add_opportunity_constraints(5.0, "<=")
+    optimizer.add_contribution_constraints(5.0, "<=")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_model"

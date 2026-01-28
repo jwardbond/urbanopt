@@ -13,7 +13,7 @@ def test_solve_basic_optimization(sample_gdf: gpd.GeoDataFrame):
 
     # Set objective and constraints
     optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-    optimizer.add_opportunity_constraints(
+    optimizer.add_contribution_constraints(
         2.0, ">="
     )  # Should force at least one pathway
 
@@ -66,8 +66,8 @@ def test_solve_infeasible_model(sample_gdf: gpd.GeoDataFrame):
     optimizer.set_objective({"cost_emb": 1.0})
 
     # Add contradictory constraints
-    optimizer.add_opportunity_constraints(10.0, ">=")  # Require high opportunity
-    optimizer.add_opportunity_constraints(5.0, "<=")  # But limit to low opportunity
+    optimizer.add_contribution_constraints(10.0, ">=")  # Require high contribution
+    optimizer.add_contribution_constraints(5.0, "<=")  # But limit to low contribution
 
     # Should raise error for infeasible model
     with pytest.raises(RuntimeError) as exc_info:
@@ -83,7 +83,7 @@ def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
 
     # Set objective and constraints
     optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-    optimizer.add_opportunity_constraints(2.0, ">=")
+    optimizer.add_contribution_constraints(2.0, ">=")
 
     # Solve and get summary
     optimizer.solve()
@@ -92,7 +92,7 @@ def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
     # Should contain all required fields
     assert "objective_value" in summary
     assert "cost_column_sums" in summary
-    assert "total_opportunity" in summary
+    assert "total_contribution" in summary
     assert "solve_time" in summary
     assert "selected_count" in summary
 
@@ -108,7 +108,7 @@ def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
 
     assert summary["solve_time"] >= 0
     assert summary["objective_value"] >= 0
-    assert summary["total_opportunity"] >= 2.0  # Due to min_opportunity constraint
+    assert summary["total_contribution"] >= 2.0  # Due to min_contribution constraint
 
 
 def test_solve_handles_multiple_constraints(sample_gdf: gpd.GeoDataFrame):
@@ -118,10 +118,10 @@ def test_solve_handles_multiple_constraints(sample_gdf: gpd.GeoDataFrame):
 
     # Set objective and constraints
     optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-    optimizer.add_opportunity_constraints(2.0, ">=")
-    optimizer.add_opportunity_constraints(4.0, "<=")
+    optimizer.add_contribution_constraints(2.0, ">=")
+    optimizer.add_contribution_constraints(4.0, "<=")
     point = Point(0.5, 0.5)
-    optimizer.add_max_opportunity_near_point(3.0, point, 1.0, proj_crs="EPSG:3347")
+    optimizer.add_max_contribution_near_point(3.0, point, 1.0, proj_crs="EPSG:3347")
 
     # Solve and check results
     optimizer.solve()
@@ -129,7 +129,7 @@ def test_solve_handles_multiple_constraints(sample_gdf: gpd.GeoDataFrame):
     summary = optimizer.get_solution_summary()
 
     # Should satisfy all constraints
-    assert 2.0 <= summary["total_opportunity"] <= 4.0
+    assert 2.0 <= summary["total_contribution"] <= 4.0
     assert len(selected) > 0
 
     # Should have optimal solution

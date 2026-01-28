@@ -25,7 +25,7 @@ def test_init_rejects_non_integer_pids():
         "start": ["A", "B", "C"],
         "end": ["X", "Y", "Z"],
         "desc": ["desc1", "desc2", "desc3"],
-        "opportunity": [1.0, 2.0, 3.0],
+        "contribution": [1.0, 2.0, 3.0],
         "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
@@ -45,7 +45,7 @@ def test_init_rejects_float_pids():
         "start": ["A", "B", "C"],
         "end": ["X", "Y", "Z"],
         "desc": ["desc1", "desc2", "desc3"],
-        "opportunity": [1.0, 2.0, 3.0],
+        "contribution": [1.0, 2.0, 3.0],
         "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
     }
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
@@ -73,7 +73,7 @@ def test_missing_required_columns():
     assert "Missing required columns" in str(exc_info.value)
     assert "end" in str(exc_info.value)
     assert "desc" in str(exc_info.value)
-    assert "opportunity" in str(exc_info.value)
+    assert "contribution" in str(exc_info.value)
 
 
 def test_cost_columns_extraction(sample_gdf: gpd.GeoDataFrame):

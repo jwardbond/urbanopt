@@ -68,7 +68,7 @@ class PathwayOptimizer:
         ...     "start": ["A", "B", "C"],
         ...     "end": ["X", "Y", "Z"],
         ...     "desc": ["desc1", "desc2", "desc3"],
-        ...     "opportunity": [1.0, 2.0, 3.0],
+        ...     "contribution": [1.0, 2.0, 3.0],
         ...     "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
         ...     "cost_emb": [10, 20, 30],
         ...     "cost_transit": [5, 15, 25]
@@ -77,7 +77,7 @@ class PathwayOptimizer:
         >>> optimizer = PathwayOptimizer(gdf)
         >>> optimizer.build_variables()
         >>> optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
-        >>> optimizer.add_opportunity_constraints(3.0, tag="constraints")
+        >>> optimizer.add_contribution_constraints(3.0, tag="constraints")
     """
 
     def __init__(self, gdf: gpd.GeoDataFrame) -> None:
@@ -90,7 +90,7 @@ class PathwayOptimizer:
                 - start: Start point/area
                 - end: End point/area
                 - desc: Description
-                - opportunity: Opportunity score
+                - contribution: Contribution score
                 - geometry: Shapely geometry
                 - cost_*: Cost-related columns
 
@@ -105,7 +105,7 @@ class PathwayOptimizer:
             "start",
             "end",
             "desc",
-            "opportunity",
+            "contribution",
             "geometry",
         ]
         missing_columns = [col for col in required_columns if col not in gdf.columns]
@@ -285,7 +285,7 @@ class PathwayOptimizer:
             dict: Dictionary containing the results with the following keys:
 
                 * **objective_value** (float): The final objective value.
-                * **total_opportunity** (float): Sum of opportunity for selected pathways.
+                * **total_contribution** (float): Sum of contribution for selected pathways.
                 * **solve_time** (float): Time taken to solve the model (seconds).
                 * **selected_count** (int): Number of selected pathways.
 
@@ -299,14 +299,14 @@ class PathwayOptimizer:
         selected_pids = self.get_selected_pids()
         filtered = self.data[self.data["pid"].isin(selected_pids)]
 
-        total_opportunity = filtered["opportunity"].sum()
+        total_contribution = filtered["contribution"].sum()
 
         costs = {c: filtered[c].sum() for c in self.cost_columns}
 
         return {
             "objective_value": self.model.ObjVal,
             "cost_column_sums": costs,
-            "total_opportunity": total_opportunity,
+            "total_contribution": total_contribution,
             "solve_time": self.model.Runtime,
             "selected_count": len(selected_pids),
         }
@@ -316,7 +316,7 @@ class PathwayOptimizer:
 
         Prints a formatted summary including:
         - Objective value
-        - Total opportunity of selected pathways
+        - Total contribution of selected pathways
         - Solve time in seconds
         - Number of selected pathways
 
@@ -327,23 +327,23 @@ class PathwayOptimizer:
 
         print("Optimization Summary")
         print(f"  Objective Value   : {summary['objective_value']:.2f}")
-        print(f"  Total Opportunity: {summary['total_opportunity']:.2f}")
+        print(f"  Total Contribution: {summary['total_contribution']:.2f}")
         print(f"  Solve Time        : {summary['solve_time']:.3f} sec")
         print(f"  Selected Pathways : {summary['selected_count']}")
 
-    def add_opportunity_constraints(
+    def add_contribution_constraints(
         self,
         limits: float | list[float],
         sense: str,
         boundaries: None | Polygon | MultiPolygon | list = None,
         tag: str | None = None,
     ) -> gp.MConstr:
-        """Add a constraint limiting the total opportunity within a given boundary (or boundaries).
+        """Add a constraint limiting the total contribution within a given boundary (or boundaries).
 
         Always returns a matrix constraint.
 
         Args:
-            limits (float | list[float]): Maximum allowed total opportunity (or a list of those).
+            limits (float | list[float]): Maximum allowed total contribution (or a list of those).
             sense (str): One of "<=", ">=", or "=="
             boundaries (None | Polygon | MultiPolygon | list, optional): Optional boundary or list of boundaries.
             tag (str | None, optional): Optional tag for constraint tracking or removal.
@@ -385,7 +385,7 @@ class PathwayOptimizer:
             )
             boundary_gdf["group_id"] = boundary_gdf.index
             joined = gpd.sjoin(
-                self.data[["pid", "opportunity", "geometry"]],
+                self.data[["pid", "contribution", "geometry"]],
                 boundary_gdf[["group_id", "geometry"]],
                 how="inner",
                 predicate="intersects",
@@ -402,7 +402,7 @@ class PathwayOptimizer:
 
         # Build mapping and sparse matrix
         pid_to_index = {pid: i for i, pid in enumerate(filtered_pids)}
-        opportunity_map = self.data.set_index("pid")["opportunity"].to_dict()
+        contribution_map = self.data.set_index("pid")["contribution"].to_dict()
 
         row_indices = []
         col_indices = []
@@ -414,7 +414,7 @@ class PathwayOptimizer:
 
             row_indices.append(group_idx)
             col_indices.append(col_idx)
-            data.append(opportunity_map[pid])
+            data.append(contribution_map[pid])
 
         coeffs = coo_matrix(
             (data, (row_indices, col_indices)),
@@ -440,16 +440,16 @@ class PathwayOptimizer:
         limits: list[float],
         tag: str | None = None,
     ) -> tuple[gp.MConstr, gp.MConstr]:
-        """Constrain the (absolute) difference in opportunity within two geometries within a given limit.
+        """Constrain the (absolute) difference in contribution within two geometries within a given limit.
 
         For each pair of geometries (zone1, zone2), enforces:
-            sum(opportunity in zone1) - sum(opportunity in zone2) <= limit
-            sum(opportunity in zone2) - sum(opportunity in zone1) <= limit
+            sum(contribution in zone1) - sum(contribution in zone2) <= limit
+            sum(contribution in zone2) - sum(contribution in zone1) <= limit
 
         Args:
             geom_pairs: List of (geom1, geom2) tuples.
             sense (str): One of "<=", ">=", or "=="
-            limits (float | list[float]): Maximum allowed total opportunity (or a list of those).
+            limits (float | list[float]): Maximum allowed total contribution (or a list of those).
             tag (str | None, optional): Optional tag for constraint tracking or removal.
 
         Returns:
@@ -475,9 +475,9 @@ class PathwayOptimizer:
             crs=self.data.crs,
         )
         # Join with data
-        pid_data = self.data[["pid", "opportunity", "geometry"]].copy()
+        pid_data = self.data[["pid", "contribution", "geometry"]].copy()
         combined = combined.sjoin(pid_data, predicate="intersects", how="left")
-        combined = combined[~combined["opportunity"].isna()]
+        combined = combined[~combined["contribution"].isna()]
         combined["pid"] = combined["pid"].astype(int)
         combined["index_right"] = combined["index_right"].astype(int)
 
@@ -495,7 +495,7 @@ class PathwayOptimizer:
         # Construct COO matrix
         row_indices = combined["row"].to_list()
         col_indices = combined["pid"].map(pid_to_index).to_list()
-        combined["coeff"] = combined["opportunity"] * combined["side"]
+        combined["coeff"] = combined["contribution"] * combined["side"]
         values = combined["coeff"].to_list()
 
         coeffs = coo_matrix(
@@ -732,7 +732,7 @@ class PathwayOptimizer:
             tag=tag,
         )
 
-    def add_max_opportunity_near_point(
+    def add_max_contribution_near_point(
         self,
         limit: float,
         point: Point,
@@ -740,10 +740,10 @@ class PathwayOptimizer:
         proj_crs: str | None = None,
         tag: str | None = None,
     ) -> gp.Constr:
-        """Add a constraint limiting total opportunity for pathways near a point.
+        """Add a constraint limiting total contribution for pathways near a point.
 
         Args:
-            limit: Maximum allowed total opportunity across selected pathways.
+            limit: Maximum allowed total contribution across selected pathways.
             point: Shapely Point to measure distance from.
             distance: Maximum distance from point to pathway centroid.
             proj_crs: Optional CRS to project geometries into before distance calculation.
@@ -771,7 +771,7 @@ class PathwayOptimizer:
         filtered_pids = data[mask]["pid"].tolist()
 
         coeff_map = {
-            f"x_{pid}": self.data[self.data["pid"] == pid]["opportunity"].iloc[0]
+            f"x_{pid}": self.data[self.data["pid"] == pid]["contribution"].iloc[0]
             for pid in filtered_pids
         }
         varnames = list(coeff_map.keys())

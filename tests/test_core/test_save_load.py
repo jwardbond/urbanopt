@@ -65,9 +65,9 @@ def test_load_restores_constraints(sample_gdf: gpd.GeoDataFrame):
     optimizer.build_variables()
 
     # Add constraints with different tags
-    optimizer.add_opportunity_constraints(5.0, "<=", tag="test_tag")
-    optimizer.add_opportunity_constraints(2.0, ">=", tag="test_tag")
-    optimizer.add_opportunity_constraints(3.0, "<=", tag="other_tag")
+    optimizer.add_contribution_constraints(5.0, "<=", tag="test_tag")
+    optimizer.add_contribution_constraints(2.0, ">=", tag="test_tag")
+    optimizer.add_contribution_constraints(3.0, "<=", tag="other_tag")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_optimizer"
@@ -86,8 +86,8 @@ def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
     optimizer.build_variables()
 
     # Add constraints with different senses
-    optimizer.add_opportunity_constraints(5.0, "<=", tag="le_test")  # Uses "<="
-    optimizer.add_opportunity_constraints(2.0, ">=", tag="ge_test")  # Uses ">="
+    optimizer.add_contribution_constraints(5.0, "<=", tag="le_test")  # Uses "<="
+    optimizer.add_contribution_constraints(2.0, ">=", tag="ge_test")  # Uses ">="
 
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_optimizer"
@@ -121,7 +121,7 @@ def test_save_rejects_unbuilt_model():
             "start": ["A"],
             "end": ["X"],
             "desc": ["test"],
-            "opportunity": [1.0],
+            "contribution": [1.0],
             "geometry": [Point(0, 0)],
             "cost_emb": [10],
             "cost_transit": [5],
@@ -152,7 +152,7 @@ def test_load_handles_missing_files():
                 "start": ["A"],
                 "end": ["X"],
                 "desc": ["test"],
-                "opportunity": [1.0],
+                "contribution": [1.0],
                 "geometry": [Point(0, 0)],
                 "cost_emb": [10],
                 "cost_transit": [5],
