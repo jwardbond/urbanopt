@@ -435,7 +435,7 @@ class PathwayOptimizer:
         sense: str,
         limits: list[float],
         tag: str | None = None,
-    ) -> tuple[gp.MConstr]:
+    ) -> tuple[gp.MConstr, gp.MConstr]:
         """Constrain the (absolute) difference in opportunity within two geometries within a given limit.
 
         For each pair of geometries (zone1, zone2), enforces:
@@ -449,7 +449,7 @@ class PathwayOptimizer:
             tag (str | None, optional): Optional tag for constraint tracking or removal.
 
         Returns:
-            List of Gurobi constraint objects.
+            tuple[gp.MConstr, gp.MConstr]: Two Gurobi matrix constraint objects for the absolute difference.
 
         Raises:
             ValueError: If geom_pairs and limits are not the same length.
@@ -528,8 +528,8 @@ class PathwayOptimizer:
         proj_crs: str | None = None,
         debuff: float = 0,
         tag: str | None = None,
-    ) -> None:
-        """Constrains the sum of pathways that start from a given start form.
+    ) -> gp.Constr:
+        """Constrain the sum of pathways that start from a given "start" type.
 
         This method can be used to (e.g.) constrain the total number of pathways that start
         from "sfh" to 10, indicating that only 10 sfh can be converted.
@@ -558,8 +558,7 @@ class PathwayOptimizer:
             tag (str | None, optional): Optional tag for constraint tracking or removal. Defaults to None.
 
         Returns:
-            gp.Constr | None: The Gurobi constraint object added to the model, or None
-                            if _register_constraint returns None.
+            gp.Constr: The Gurobi constraint object added to the model.
 
         Raises:
             ValueError: If debuff is negative.
@@ -649,7 +648,7 @@ class PathwayOptimizer:
         label1: str,
         label2: str | None = None,
         tag: str | None = None,
-    ) -> list[gp.Constr]:
+    ) -> gp.MConstr | None:
         """Add mutual exclusion constraints between pathways based on their labels.
 
         If label2 is provided, creates constraints ensuring no pathway with label1 can be selected with an intersecting pathway with label2.
@@ -663,7 +662,7 @@ class PathwayOptimizer:
             tag: Optional tag for constraint tracking/removal.
 
         Returns:
-            List of Gurobi constraint objects.
+            gp.MConstr | None: Gurobi matrix constraint object, or None if no exclusions found.
         """
         constraints = []
 
@@ -972,7 +971,7 @@ class PathwayOptimizer:
         tag: str | None = None,
         defer_update: bool = False,
     ) -> gp.Constr:
-        """Generic constraint builder.
+        """Add constraint to Gurobi model.
 
         Registers a constraint with the gurobi model, and stores a reference to it.
 
@@ -1019,7 +1018,7 @@ class PathwayOptimizer:
         rhs: np.ndarray,
         tag: str | None = None,
         defer_update: bool = False,
-    ) -> list[gp.Constr]:
+    ) -> gp.MConstr:
         """Register multiple constraints at once using matrix form.
 
         This is a more efficient way to add many constraints at once compared to
@@ -1035,7 +1034,7 @@ class PathwayOptimizer:
             defer_update: If False, calls model.update() before exiting. Defaults to False.
 
         Returns:
-            List of created Gurobi constraint objects.
+            gp.MConstr: The created Gurobi matrix constraint object.
 
         Raises:
             ValueError: If sense is not one of "<=", ">=", or "==".
