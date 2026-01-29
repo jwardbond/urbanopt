@@ -2,14 +2,14 @@ import geopandas as gpd
 import gurobipy as gp
 import pytest
 
-from urbanopt import PathwayOptimizer
+from urbanopt import UrbanOPT
 
 
 def test_set_objective_invalid_weights(sample_gdf: gpd.GeoDataFrame):
     """Test that set_objective raises ValueError for invalid cost columns."""
     sample_gdf["cost_emb"] = [10, 20, 30]
     sample_gdf["cost_transit"] = [5, 15, 25]
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     invalid_weights = {"cost_emb": 1.0, "invalid_cost": 0.5}
 
@@ -24,7 +24,7 @@ def test_set_objective_valid_weights(sample_gdf: gpd.GeoDataFrame):
     """Test that set_objective correctly sets the objective with valid weights."""
     sample_gdf["cost_emb"] = [10, 20, 30]
     sample_gdf["cost_transit"] = [5, 15, 25]
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     weights = {"cost_emb": 1.0, "cost_transit": 0.5}
 

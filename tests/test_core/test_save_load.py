@@ -6,12 +6,12 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point
 
-from urbanopt import PathwayOptimizer
+from urbanopt import UrbanOPT
 
 
 def test_save_creates_files(sample_gdf: gpd.GeoDataFrame):
     """Test that save creates both required files."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
 
@@ -26,13 +26,13 @@ def test_save_creates_files(sample_gdf: gpd.GeoDataFrame):
 
 def test_load_restores_data(sample_gdf: gpd.GeoDataFrame):
     """Test that load restores basic data correctly."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_optimizer"
         optimizer.save(path)
-        loaded = PathwayOptimizer.load(path)
+        loaded = UrbanOPT.load(path)
 
         # Should restore data correctly
         assert loaded.data.equals(optimizer.data)
@@ -42,14 +42,14 @@ def test_load_restores_data(sample_gdf: gpd.GeoDataFrame):
 
 def test_load_restores_objective(sample_gdf: gpd.GeoDataFrame):
     """Test that load restores objective function correctly."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
 
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_optimizer"
         optimizer.save(path)
-        loaded = PathwayOptimizer.load(path)
+        loaded = UrbanOPT.load(path)
 
         # Should restore objective correctly
         loaded_obj = loaded.model.getObjective()
@@ -61,7 +61,7 @@ def test_load_restores_objective(sample_gdf: gpd.GeoDataFrame):
 
 def test_load_restores_constraints(sample_gdf: gpd.GeoDataFrame):
     """Test that load restores constraints correctly."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Add constraints with different tags
@@ -72,7 +72,7 @@ def test_load_restores_constraints(sample_gdf: gpd.GeoDataFrame):
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_optimizer"
         optimizer.save(path)
-        loaded = PathwayOptimizer.load(path)
+        loaded = UrbanOPT.load(path)
 
         # Should restore constraints correctly
         assert set(loaded._constraints.keys()) == set(optimizer._constraints.keys())
@@ -82,7 +82,7 @@ def test_load_restores_constraints(sample_gdf: gpd.GeoDataFrame):
 
 def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
     """Test that constraint senses are correctly saved and loaded."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Add constraints with different senses
@@ -107,7 +107,7 @@ def test_save_constraint_sense(sample_gdf: gpd.GeoDataFrame):
         )
 
         # Load and verify constraints work
-        loaded = PathwayOptimizer.load(path)
+        loaded = UrbanOPT.load(path)
         assert len(loaded._constraints["le_test"]) == 1
         assert len(loaded._constraints["ge_test"]) == 1
 
@@ -127,7 +127,7 @@ def test_save_rejects_unbuilt_model():
             "cost_transit": [5],
         }
     )
-    optimizer = PathwayOptimizer(data)
+    optimizer = UrbanOPT(data)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test_optimizer"
@@ -142,7 +142,7 @@ def test_load_handles_missing_files():
 
         # Should raise FileNotFoundError for missing geoparquet
         with pytest.raises(FileNotFoundError, match="GeoParquet file not found"):
-            PathwayOptimizer.load(path)
+            UrbanOPT.load(path)
 
         # Create geoparquet but no json
         data = gpd.GeoDataFrame(
@@ -164,4 +164,4 @@ def test_load_handles_missing_files():
         with pytest.raises(
             FileNotFoundError, match="JSON configuration file not found"
         ):
-            PathwayOptimizer.load(path)
+            UrbanOPT.load(path)

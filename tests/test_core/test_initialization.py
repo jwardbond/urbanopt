@@ -3,12 +3,12 @@ import gurobipy as gp
 import pytest
 from shapely.geometry import Point
 
-from urbanopt import PathwayOptimizer
+from urbanopt import UrbanOPT
 
 
 def test_optimizer_initialization(sample_gdf: gpd.GeoDataFrame):
     """Test that the optimizer initializes correctly with a GeoDataFrame."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
 
     # Should be initialized with a copy of input data
     assert optimizer.data is not sample_gdf
@@ -31,7 +31,7 @@ def test_init_rejects_non_integer_pids():
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
 
     with pytest.raises(ValueError) as exc_info:
-        PathwayOptimizer(gdf)
+        UrbanOPT(gdf)
 
     # Should raise error for non-integer PIDs
     assert "All PIDs must be integers" in str(exc_info.value)
@@ -51,7 +51,7 @@ def test_init_rejects_float_pids():
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
 
     with pytest.raises(ValueError) as exc_info:
-        PathwayOptimizer(gdf)
+        UrbanOPT(gdf)
 
     # Should raise error for non-integer PIDs
     assert "All PIDs must be integers" in str(exc_info.value)
@@ -67,7 +67,7 @@ def test_missing_required_columns():
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
 
     with pytest.raises(ValueError) as exc_info:
-        PathwayOptimizer(gdf)
+        UrbanOPT(gdf)
 
     # Should raise error with missing columns
     assert "Missing required columns" in str(exc_info.value)
@@ -82,7 +82,7 @@ def test_cost_columns_extraction(sample_gdf: gpd.GeoDataFrame):
     sample_gdf["cost_transit"] = [5, 15, 25]
     sample_gdf["not_a_cost"] = [1, 2, 3]
 
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
 
     # Should extract correct cost columns
     assert sorted(optimizer.cost_columns) == ["cost_emb", "cost_transit"]
@@ -91,7 +91,7 @@ def test_cost_columns_extraction(sample_gdf: gpd.GeoDataFrame):
 
 def test_build_variables(sample_gdf: gpd.GeoDataFrame):
     """Test that build_variables creates binary variables for each pathway."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Test that variables are created correctly

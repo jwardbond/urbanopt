@@ -1,3 +1,3 @@
 # API Reference
 
-:::urbanopt.PathwayOptimizer
+:::urbanopt.UrbanOPT

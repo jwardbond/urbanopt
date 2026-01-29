@@ -3,12 +3,12 @@ import gurobipy as gp
 import pytest
 from shapely.geometry import Point
 
-from urbanopt import PathwayOptimizer
+from urbanopt import UrbanOPT
 
 
 def test_solve_basic_optimization(sample_gdf: gpd.GeoDataFrame):
     """Test that solve() works correctly for a basic optimization problem."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Set objective and constraints
@@ -35,7 +35,7 @@ def test_solve_basic_optimization(sample_gdf: gpd.GeoDataFrame):
 
 def test_get_selected_pids_requires_solve(sample_gdf: gpd.GeoDataFrame):
     """Test that get_selected_pids() raises error if called before solving."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
 
@@ -48,7 +48,7 @@ def test_get_selected_pids_requires_solve(sample_gdf: gpd.GeoDataFrame):
 
 def test_get_solution_summary_requires_solve(sample_gdf: gpd.GeoDataFrame):
     """Test that get_solution_summary() raises error if called before solving."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
 
@@ -61,7 +61,7 @@ def test_get_solution_summary_requires_solve(sample_gdf: gpd.GeoDataFrame):
 
 def test_solve_infeasible_model(sample_gdf: gpd.GeoDataFrame):
     """Test that solve() raises error for infeasible model."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
 
@@ -78,7 +78,7 @@ def test_solve_infeasible_model(sample_gdf: gpd.GeoDataFrame):
 
 def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
     """Test that get_solution_summary() returns correct information."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Set objective and constraints
@@ -113,7 +113,7 @@ def test_get_solution_summary_contents(sample_gdf: gpd.GeoDataFrame):
 
 def test_solve_handles_multiple_constraints(sample_gdf: gpd.GeoDataFrame):
     """Test solving with multiple interacting constraints."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Set objective and constraints

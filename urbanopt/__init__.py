@@ -1,4 +1,4 @@
-from .core import PathwayOptimizer
+from .core import UrbanOPT
 from .polygraph import PolyGraph
 
-__all__ = ["PathwayOptimizer"]
+__all__ = ["UrbanOPT"]

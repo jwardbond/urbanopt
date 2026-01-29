@@ -5,13 +5,13 @@ import pytest
 from scipy.sparse import csr_matrix
 from shapely.geometry import MultiPolygon, Point, Polygon
 
-from urbanopt import PathwayOptimizer
+from urbanopt import UrbanOPT
 from urbanopt.core import _reproject_point
 
 
 def test_add_contribution_constraints_global(sample_gdf: gpd.GeoDataFrame):
     """Test that global contribution constraint includes all pathways in a matrix constraint."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     limit = 4.0
 
@@ -49,7 +49,7 @@ def test_add_contribution_constraints_correct_sense(
     sample_gdf: gpd.GeoDataFrame, sense_input, expected_sense
 ):
     """Test that contribution constraints are initialized with correct senses ("<=", ">=", "==")."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     limit = 4.0
@@ -89,7 +89,7 @@ def test_add_contribution_constraints_geom_boundary(
     expected_pids: list[int],
 ):
     """Test that contribution constraint correctly filters different sets of PIDs for Polygon vs MultiPolygon."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     limit = 10.0
@@ -115,7 +115,7 @@ def test_add_contribution_constraints_geom_boundary(
 
 def test_add_contribution_constraints_handles_tags(sample_gdf: gpd.GeoDataFrame):
     """Test that contribution constraints are correctly tagged."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     limit1 = 4.0
@@ -149,7 +149,7 @@ def test_add_contribution_constraints_multiple_limits_and_boundaries(
     sample_gdf: gpd.GeoDataFrame,
 ):
     """Test that multiple limits and boundaries create a matrix constraint with correct rows and columns."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     limits = [4.0, 5.0]
@@ -197,7 +197,7 @@ def test_zone_difference_constraints_creates_two_constraints(
     sample_gdf: gpd.GeoDataFrame,
 ):
     """Ensure two MConstrs are returned per geometry pair."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     geom_pairs = [
@@ -226,7 +226,7 @@ def test_zone_difference_constraints_creates_two_constraints(
 
 def test_zone_difference_constraints_tags_are_correct(sample_gdf: gpd.GeoDataFrame):
     """Check that both MConstrs are stored under separate tags."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     pair = (
@@ -250,7 +250,7 @@ def test_zone_difference_constraints_handles_non_intersecting(
     sample_gdf: gpd.GeoDataFrame,
 ):
     """Ensure constraint still works when one of the zones has no intersecting geometry."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     pair = (
@@ -275,7 +275,7 @@ class TestConversionConstraints:
     ):
         """Test a simple instance where we don't care about overlaps"""
         input_gdf = overlapping_pathways_gdf
-        optimizer = PathwayOptimizer(input_gdf)
+        optimizer = UrbanOPT(input_gdf)
         optimizer.build_variables()
         optimizer.add_conversion_constraints(start_name="A", sense="<=", limit=1)
 
@@ -301,7 +301,7 @@ class TestConversionConstraints:
         overlapping_pathways_gdf: gpd.GeoDataFrame,
     ):
         gdf = overlapping_pathways_gdf
-        optimizer = PathwayOptimizer(gdf)
+        optimizer = UrbanOPT(gdf)
         optimizer.build_variables()
         optimizer.add_conversion_constraints(
             start_name="A",
@@ -328,14 +328,14 @@ class TestConversionConstraints:
 
     def test_invalid_start(self, mutual_exclusion_gdf: gpd.geodataframe):
         gdf = mutual_exclusion_gdf
-        optimizer = PathwayOptimizer(gdf)
+        optimizer = UrbanOPT(gdf)
         optimizer.build_variables()
         with pytest.raises(ValueError, match="No pathways start from Z"):
             optimizer.add_conversion_constraints(start_name="Z", sense="<=", limit=1)
 
     def test_debuff_warning(self, mutual_exclusion_gdf: gpd.GeoDataFrame):
         gdf = mutual_exclusion_gdf
-        optimizer = PathwayOptimizer(gdf)
+        optimizer = UrbanOPT(gdf)
         optimizer.build_variables()
         with pytest.warns(
             UserWarning,
@@ -350,7 +350,7 @@ class TestConversionConstraints:
 
     def test_tags(self, mutual_exclusion_gdf: gpd.GeoDataFrame):
         gdf = mutual_exclusion_gdf
-        optimizer = PathwayOptimizer(gdf)
+        optimizer = UrbanOPT(gdf)
         optimizer.build_variables()
         optimizer.add_conversion_constraints(
             start_name="A",
@@ -368,7 +368,7 @@ def test_add_mutual_exclusion_creates_constraints(
     mutual_exclusion_gdf: gpd.GeoDataFrame,
 ):
     """Test that mutual exclusion constraints are created for intersecting pathways."""
-    optimizer = PathwayOptimizer(mutual_exclusion_gdf)
+    optimizer = UrbanOPT(mutual_exclusion_gdf)
     optimizer.build_variables()
 
     # Test basic intersection case between adu and bment pathways
@@ -402,7 +402,7 @@ def test_add_mutual_exclusion_handles_no_intersections(
     mutual_exclusion_gdf: gpd.GeoDataFrame,
 ):
     """Test that no constraints are created when pathways don't intersect."""
-    optimizer = PathwayOptimizer(mutual_exclusion_gdf)
+    optimizer = UrbanOPT(mutual_exclusion_gdf)
     optimizer.build_variables()
 
     # Test between hsplit and merge pathways which don't intersect
@@ -421,7 +421,7 @@ def test_add_mutual_exclusion_handles_single_label(
     mutual_exclusion_gdf: gpd.GeoDataFrame,
 ):
     """Test that mutual exclusion works with a single label."""
-    optimizer = PathwayOptimizer(mutual_exclusion_gdf)
+    optimizer = UrbanOPT(mutual_exclusion_gdf)
     optimizer.build_variables()
 
     # Test exclusion for adu pathways
@@ -454,7 +454,7 @@ def test_add_max_contribution_near_point_filters_by_distance(
     sample_gdf: gpd.GeoDataFrame,
 ):
     """Test that max contribution near point constraint correctly filters by distance."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     limit = 4.0
     point = Point(0.5, 0.5)  # Center point
@@ -492,7 +492,7 @@ def test_add_max_contribution_near_point_validates_crs(sample_gdf: gpd.GeoDataFr
     """Test that max contribution near point constraint validates CRS."""
     # Set geographic CRS
     sample_gdf = sample_gdf.set_crs("EPSG:4326")
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     point = Point(0.5, 0.5)
     distance = 0.7
@@ -513,7 +513,7 @@ def test_add_max_contribution_near_point_validates_crs(sample_gdf: gpd.GeoDataFr
 
 def test_register_constraint_senses(sample_gdf: gpd.GeoDataFrame):
     """Test that _register_constraint handles all constraint types correctly."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Should create less-than constraint
@@ -559,7 +559,7 @@ def test_register_constraint_senses(sample_gdf: gpd.GeoDataFrame):
 
 def test_remove_constraints_removes_by_tag(sample_gdf: gpd.GeoDataFrame):
     """Test that removing constraints by tag actually deletes them from the model and tracking dict."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     boundary = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
@@ -599,7 +599,7 @@ def test_remove_constraints_removes_by_tag(sample_gdf: gpd.GeoDataFrame):
 
 def test_remove_constraints_invalid_tag(sample_gdf: gpd.GeoDataFrame):
     """Test that removing constraints with invalid tag raises error."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     optimizer.add_contribution_constraints(5.0, "<=", tag="test_tag")
 
@@ -617,7 +617,7 @@ def test_register_matrix_constraint(sample_gdf: gpd.GeoDataFrame):
 
 def test_register_matrix_constraint_less_than(sample_gdf: gpd.GeoDataFrame):
     """Test that matrix constraints are correctly registered with less-than sense."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     pids = [1, 2]
     varnames = [f"x_{pid}" for pid in pids]
@@ -670,7 +670,7 @@ def test_register_matrix_constraint_invalid_sense(sample_gdf: gpd.GeoDataFrame):
     from scipy.sparse import csr_matrix
 
     # Setup
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     pids = [1, 2]
     varnames = [f"x_{p}" for p in pids]

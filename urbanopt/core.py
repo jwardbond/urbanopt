@@ -25,7 +25,7 @@ class ConstraintSchema(BaseModel):
 
 
 class OptimizerConfigSchema(BaseModel):
-    """Schema for serializing a PathwayOptimizer Configuration."""
+    """Schema for serializing a UrbanOPT Configuration."""
 
     varnames: list[str]
     cost_columns: list[str]
@@ -33,8 +33,8 @@ class OptimizerConfigSchema(BaseModel):
     constraints: dict[str, list[ConstraintSchema]]
 
 
-class PathwayOptimizer:
-    """Optimizer for housing pathway selection based on multiple criteria.
+class UrbanOPT:
+    """Core housing development optimization class.
 
     This class provides functionality to optimize pathway selection using Gurobi,
     allowing for various constraints and objectives to be defined. It supports
@@ -81,7 +81,7 @@ class PathwayOptimizer:
             gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
 
             # Initialize and run optimizer
-            optimizer = PathwayOptimizer(gdf)
+            optimizer = UrbanOPT(gdf)
             optimizer.build_variables()
             optimizer.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
             optimizer.add_contribution_constraints(3.0, tag="constraints")
@@ -89,7 +89,7 @@ class PathwayOptimizer:
     """
 
     def __init__(self, gdf: gpd.GeoDataFrame) -> None:
-        """Initialize the PathwayOptimizer.
+        """Initialize the UrbanOPT.
 
         Args:
             gdf: GeoDataFrame containing pathway data with required columns:
@@ -150,7 +150,7 @@ class PathwayOptimizer:
         self._has_dummies = False
 
     @classmethod
-    def load(cls, path: str | Path) -> "PathwayOptimizer":
+    def load(cls, path: str | Path) -> "UrbanOPT":
         """Load an optimizer from saved files.
 
         Args:
@@ -158,7 +158,7 @@ class PathwayOptimizer:
                  Will look for {path}.geoparquet and {path}.json.
 
         Returns:
-            A new PathwayOptimizer instance with restored state.
+            A new UrbanOPT instance with restored state.
 
         Raises:
             FileNotFoundError: If either file is missing.

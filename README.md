@@ -38,13 +38,13 @@ See the [installation guide](docs/installation.md) for detailed setup instructio
 
 ```python
 import geopandas as gpd
-from urbanopt import PathwayOptimizer
+from urbanopt import UrbanOPT
 
 # Load your pathway data
 gdf = gpd.read_file("pathways.geojson")
 
 # Initialize optimizer
-opt = PathwayOptimizer(gdf)
+opt = UrbanOPT(gdf)
 opt.build_variables()
 
 # Set objective to minimize costs

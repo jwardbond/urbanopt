@@ -4,12 +4,12 @@ from pathlib import Path
 import geopandas as gpd
 import pytest
 
-from urbanopt import PathwayOptimizer
+from urbanopt import UrbanOPT
 
 
 def test_print_solution_summary_after_solve(sample_gdf: gpd.GeoDataFrame, capsys):
     """Test that print_solution_summary correctly formats and prints results after solving."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
     optimizer.add_contribution_constraints(2.0, ">=")
@@ -28,7 +28,7 @@ def test_print_solution_summary_after_solve(sample_gdf: gpd.GeoDataFrame, capsys
 
 def test_print_solution_summary_requires_solve(sample_gdf: gpd.GeoDataFrame):
     """Test that print_solution_summary raises error if called before solving."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     with pytest.raises(RuntimeError, match="Model has not been solved yet"):
@@ -37,7 +37,7 @@ def test_print_solution_summary_requires_solve(sample_gdf: gpd.GeoDataFrame):
 
 def test_debug_model_basic_info(sample_gdf: gpd.GeoDataFrame, capsys):
     """Test that debug_model prints basic model information."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Add a single constraint
@@ -69,7 +69,7 @@ def test_debug_model_basic_info(sample_gdf: gpd.GeoDataFrame, capsys):
 
 def test_debug_model_verbose(sample_gdf: gpd.GeoDataFrame, capsys):
     """Test that debug_model prints detailed information in verbose mode."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
 
     # Add a single constraint
@@ -99,7 +99,7 @@ def test_debug_model_verbose(sample_gdf: gpd.GeoDataFrame, capsys):
 
 def test_export_model(sample_gdf: gpd.GeoDataFrame):
     """Test that export_model creates a readable .lp file."""
-    optimizer = PathwayOptimizer(sample_gdf)
+    optimizer = UrbanOPT(sample_gdf)
     optimizer.build_variables()
     optimizer.set_objective({"cost_emb": 1.0})
     optimizer.add_contribution_constraints(5.0, "<=")
