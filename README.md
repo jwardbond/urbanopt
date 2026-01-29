@@ -52,7 +52,7 @@ opt.set_objective({"cost_emb": 1.0, "cost_transit": 0.5})
 
 # Add constraints
 opt.add_contribution_constraints(limits=1000, sense=">=", tag="min_contribution")
-opt.add_mutual_exclusion(label1="adu", label2="sfh", tag="exclusions")
+opt.add_mutual_exclusion_constraints(label1="adu", label2="sfh", tag="exclusions")
 
 # Solve and get results
 opt.solve()

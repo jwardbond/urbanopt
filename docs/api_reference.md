@@ -1,3 +1,3 @@
-# API Reference
+# UrbanOPT API Reference
 
 :::urbanopt.UrbanOPT
