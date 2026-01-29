@@ -1,0 +1,846 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../examples/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Binary Linear Program - UrbanOPT</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="green">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#binary-linear-programming-formulation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="UrbanOPT" class="md-header__button md-logo" aria-label="UrbanOPT" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            UrbanOPT
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Binary Linear Program
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="green"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="blue-grey" data-md-color-accent="green"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="UrbanOPT" class="md-nav__button md-logo" aria-label="UrbanOPT" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    UrbanOPT
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Documentation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Binary Linear Program
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Binary Linear Program
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#constants-and-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constants and Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#formulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Formulation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Formulation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#objective-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Objective Function
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-1-minimum-population-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 1: Minimum Population Target
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-2-neighbourhood-population-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 2: Neighbourhood Population Limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-3-mutual-exclusivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 3: Mutual Exclusivity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-4-group-indicators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 4: Group Indicators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-5-pathway-capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 5: Pathway Capacity
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#constants-and-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constants and Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#formulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Formulation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Formulation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#objective-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Objective Function
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-1-minimum-population-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 1: Minimum Population Target
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-2-neighbourhood-population-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 2: Neighbourhood Population Limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-3-mutual-exclusivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 3: Mutual Exclusivity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-4-group-indicators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 4: Group Indicators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraint-5-pathway-capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraint 5: Pathway Capacity
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="binary-linear-programming-formulation">Binary Linear Programming Formulation</h1>
+<p>The goal, then, is to select the subset of these development opportunities that minimizes an objective while</p>
+<ol>
+<li>being above (below) a minimum (maximum) contribution, and</li>
+<li>obeying geospatial constraints.</li>
+</ol>
+<p>The BLP model is as follows, with variables outlined in the table below.</p>
+<h2 id="constants-and-variables">Constants and Variables</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Symbol</th>
+<th style="text-align: left;">Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Sets</strong></td>
+<td style="text-align: left;"></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{E}(\mathcal{P'})\)</span></td>
+<td style="text-align: left;">Set of all unordered pairs of overlapping development opportunities with pathway types <span class="arithmatex">\(\mathcal{P'} \subseteq \mathcal{P}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{G}(\mathcal{P'})\)</span></td>
+<td style="text-align: left;">Set of all connected components (groups) of overlapping development opportunities with pathways <span class="arithmatex">\(\mathcal{P'} \subseteq \mathcal{P}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{I}\)</span></td>
+<td style="text-align: left;">Set of development opportunities, indexed by <span class="arithmatex">\(i\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{I}_n\)</span></td>
+<td style="text-align: left;">Set of development opportunities within neighbourhood <span class="arithmatex">\(n \in \mathcal{N}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{I}_p\)</span></td>
+<td style="text-align: left;">Set of development opportunities of pathway <span class="arithmatex">\(p \in \mathcal{P}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{I}^0(\mathcal{P'})\)</span></td>
+<td style="text-align: left;">Set of development opportunities with pathways <span class="arithmatex">\(\mathcal{P'} \subseteq \mathcal{P}\)</span> that have no overlaps, i.e., <span class="arithmatex">\(i\)</span> is not in any pair within <span class="arithmatex">\(\mathcal{E}(\mathcal{P'})\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{J}\)</span></td>
+<td style="text-align: left;">Set of cost types, indexed by <span class="arithmatex">\(j\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{N}\)</span></td>
+<td style="text-align: left;">Set of bounded neighbourhoods, indexed by <span class="arithmatex">\(n\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{P}\)</span></td>
+<td style="text-align: left;">Set of development opportunity types (pathways), indexed by <span class="arithmatex">\(p\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\mathcal{P}_{\text{ex}}\)</span></td>
+<td style="text-align: left;">Set of pathways that are mutually exclusive (e.g., cannot be developed at the same location), <span class="arithmatex">\(\mathcal{P}_{\text{ex}} \subseteq \mathcal{P}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Constants</strong></td>
+<td style="text-align: left;"></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(c_{i,j}\)</span></td>
+<td style="text-align: left;">Cost of type <span class="arithmatex">\(j \in \mathcal{J}\)</span> for opportunity <span class="arithmatex">\(i \in \mathcal{I}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(O_{\mathcal{P'}}\)</span></td>
+<td style="text-align: left;">Maximum number of opportunities that can be developed with pathways <span class="arithmatex">\(\mathcal{P'} \subseteq \mathcal{P}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\pi_i\)</span></td>
+<td style="text-align: left;">Contribution (e.g., population increase) achieved by developing opportunity <span class="arithmatex">\(i \in \mathcal{I}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\Pi\)</span></td>
+<td style="text-align: left;">Minimum required population increase within the whole region</td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(\Pi_n\)</span></td>
+<td style="text-align: left;">Maximum population increase within neighbourhood <span class="arithmatex">\(n \in \mathcal{N}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Variables</strong></td>
+<td style="text-align: left;"></td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(x_i\)</span></td>
+<td style="text-align: left;">Equals 1 if opportunity <span class="arithmatex">\(i\)</span> is chosen for development, 0 otherwise</td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="arithmatex">\(z_g\)</span></td>
+<td style="text-align: left;">Equals 1 if any <span class="arithmatex">\(x_i\)</span> in group <span class="arithmatex">\(g \in \mathcal{G}(\mathcal{P'})\)</span> is selected, 0 otherwise</td>
+</tr>
+</tbody>
+</table>
+<h2 id="formulation">Formulation</h2>
+<h3 id="objective-function">Objective Function</h3>
+<div class="arithmatex">\[
+\underset{\mathbf{x}}{\text{minimize}} \quad \sum_{j}\sum_{i}\lambda_j c_{i,j}\cdot x_i \tag{1}
+\]</div>
+<p>Minimizes the total cost of developments where each cost type is given weight <span class="arithmatex">\(\lambda_j\)</span>.</p>
+<h3 id="constraint-1-minimum-population-target">Constraint 1: Minimum Population Target</h3>
+<div class="arithmatex">\[
+\sum_{i \in \mathcal{I}} \pi_i x_i \geq \Pi \tag{2}
+\]</div>
+<p>Ensures that the added housing across the entire region is at least <span class="arithmatex">\(\Pi\)</span>.</p>
+<h3 id="constraint-2-neighbourhood-population-limits">Constraint 2: Neighbourhood Population Limits</h3>
+<div class="arithmatex">\[
+\sum_{i \in \mathcal{I}_n}x_i \leq \Pi_n \quad \forall \; n \in \mathcal{N} \tag{3}
+\]</div>
+<p>Sets <em>maximum</em> contribution increases on a per-neighbourhood basis.</p>
+<h3 id="constraint-3-mutual-exclusivity">Constraint 3: Mutual Exclusivity</h3>
+<div class="arithmatex">\[
+x_i + x_{i'} \leq 1 \quad \forall \; (i, i') \in \mathcal{E}(\mathcal{P}_{\text{ex}}) \tag{4}
+\]</div>
+<p>Prevents two overlapping development opportunities from being constructed at the same time, but only insofar as those opportunities are incompatible. For instance, while you can't build a single family home (SFH) and a condo tower at the same spot, there is no reason you cannot add a basement suite and a garden suite to the same SFH property.</p>
+<h3 id="constraint-4-group-indicators">Constraint 4: Group Indicators</h3>
+<div class="arithmatex">\[
+z_g = \bigvee_{i\in g} x_i \quad \forall\; g \in \mathcal{G}(\mathcal{P}') \tag{5}
+\]</div>
+<p>Creates dummy variables which are used only when developing maximum contribution constraints and only in the case were certain development opportunities are allowed to co-occur at the same location.</p>
+<h3 id="constraint-5-pathway-capacity">Constraint 5: Pathway Capacity</h3>
+<div class="arithmatex">\[
+\sum_{i \in \mathcal{I}^0(\mathcal{P'})}x_i + \sum_{g \in \mathcal{G}(\mathcal{P'})}z_g \leq O_{\mathcal{P'}} \tag{6}
+\]</div>
+<p>Limits the total number of development opportunities for a subset of pathways.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
