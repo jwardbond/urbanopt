@@ -2,11 +2,11 @@
 
 ![urbanopt logo](static/logo_no_bg.png)
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/yourusername/urbanopt/releases)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/jwardbond/urbanopt/releases)
 
 *Optimization framework for urban housing pathway selection*
 
-[Documentation](https://urbanopt.readthedocs.io) | [Installation](#installation) | [Examples](docs/examples)
+[Documentation](https://jwardbond.github.io/urbanopt/) | [Installation](#installation) | [Examples](docs/examples)
 
 </div>
 
@@ -31,8 +31,6 @@ pip install urbanopt
 
 # Requires Gurobi license (academic licenses available free)
 ```
-
-See the [installation guide](docs/installation.md) for detailed setup instructions. *(coming soon)*
 
 ## Quick Start
 
@@ -60,20 +58,4 @@ print(opt.get_solution_summary())
 
 # Save the model
 opt.save("results/my_optimization")
-```
-
-## Documentation
-
-Full documentation is available at [urbanopt.readthedocs.io](https://urbanopt.readthedocs.io) *(coming soon)*
-
-- [User Guide](docs/guide.md)
-- [API Reference](docs/api.md)
-- [Examples](docs/examples)
-
-## Citation *(coming soon)*
-
-If you use `urbanopt` in your research, please cite:
-
-```bibtex
-...
 ```
